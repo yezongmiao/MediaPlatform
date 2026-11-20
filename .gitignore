@@ -5,3 +5,5 @@ artifacts
 .e2e-workspace
 *.log
 .DS_Store
+test-results/
+release/
