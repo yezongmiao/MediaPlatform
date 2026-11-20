@@ -71,6 +71,7 @@ macOS 产物：
 Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bundles nsis` 即生成安装包；仓库内的 GitHub Actions（`.github/workflows/build.yml`）会同时构建 macOS 与 Windows 安装包以及免安装浏览器版二进制。
 
 > 说明：当前版本在 macOS（Apple Silicon）上完成了本机构建与启动验证；Windows 构建配置与 CI 已就绪，但未在 Windows 实机验收。Windows 版可在 Windows 上按上述命令构建，或使用 CI 产物；浏览器版是单文件二进制，无需安装 Node。
+> 本机构建未做 Apple 开发者签名/公证；若从网络下载后 macOS 提示「无法验证开发者」，请右键应用 → 打开，或在「系统设置 → 隐私与安全性」中允许。
 
 ## 已构建产物（macOS arm64）
 
