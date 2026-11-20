@@ -188,6 +188,10 @@ export function Modal({
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
     document.body.classList.add('modal-open');
+    const shell = document.querySelector('.app-shell');
+    if (shell && document.querySelectorAll('.modal-panel').length <= 1) {
+      shell.setAttribute('inert', '');
+    }
     const timer = window.setTimeout(() => {
       const target =
         panelRef.current?.querySelector<HTMLElement>(
@@ -196,6 +200,22 @@ export function Modal({
       target?.focus();
     }, 30);
     const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Tab') {
+        const nodes = panelRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (!nodes?.length) return;
+        const first = nodes[0];
+        const last = nodes[nodes.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+        return;
+      }
       if (event.key !== 'Escape') return;
       // Nested dialogs portal later into <body>; only the top one may close.
       const panels = document.querySelectorAll('.modal-panel');
@@ -210,9 +230,10 @@ export function Modal({
       window.setTimeout(() => {
         if (!document.querySelector('.modal-panel')) {
           document.body.classList.remove('modal-open');
+          shell?.removeAttribute('inert');
         }
+        previous?.focus?.();
       }, 0);
-      previous?.focus?.();
     };
   }, [open, onClose]);
 

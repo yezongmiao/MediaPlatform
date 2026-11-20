@@ -19,8 +19,6 @@ export function applyTheme(mode: ThemeMode): void {
   const effective = effectiveTheme(mode);
   document.documentElement.dataset.theme = effective;
   document.documentElement.style.colorScheme = effective;
-  const themeColor = effective === 'dark' ? '#171512' : '#f2ede4';
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
 }
 
 export function persistTheme(mode: ThemeMode): void {

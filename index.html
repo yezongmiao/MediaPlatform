@@ -2,11 +2,25 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f4efe6" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
     <meta name="description" content="媒材工坊 — 自媒体灵感与素材工作台" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>媒材工坊 · MediaDesk</title>
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem('mediadesk-theme') || 'system';
+          var dark =
+            mode === 'dark' ||
+            (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (error) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="app"></div>
