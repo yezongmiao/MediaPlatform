@@ -105,7 +105,7 @@ Running 3 tests using 1 worker
 |---|---|
 | 浏览器服务二进制 | **3.0 MiB** |
 | 浏览器服务 RSS（空载，macOS） | **8.3–8.9 MiB** |
-| 浏览器服务冷启动到 `/api/health` 可用 | **0.09s（文件已缓存）～0.66s（首次启动）** |
+| 浏览器服务冷启动到 `/api/health` 可用 | **0.09s（文件已缓存）～0.71s（首次启动）** |
 | 前端 JS / CSS（gzip） | **68.07 KiB / 14.09 KiB** |
 | macOS `.app` | **5.75 MiB** |
 | macOS `.dmg` | **3.41 MiB** |
