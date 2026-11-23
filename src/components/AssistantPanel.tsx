@@ -3,7 +3,7 @@ import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import type { Asset, AssistantMessage, AssistantMode, Kind, Project } from '../lib/types';
 import { KINDS } from '../lib/types';
-import { Button, ConfirmDialog, InlineError, Modal } from './ui';
+import { Button, ConfirmDialog, IconButton, InlineError } from './ui';
 import { Icon } from './Icon';
 import { MarkdownView } from './MarkdownView';
 import { navigate } from '../lib/router';
@@ -133,14 +133,16 @@ export function AssistantPanel({
 
   return (
     <>
-      <Modal
-        open={open}
-        onClose={onClose}
-        title="项目助手"
-        subtitle={`${project.title} · 读取当前项目与素材，可讨论，也可直接改稿`}
-        size="full"
-        class="assistant-modal"
-      >
+      <div class="assistant-scrim" onClick={onClose} />
+      <aside class="assistant-sidebar" aria-label="项目助手">
+        <header class="assistant-sidebar-header">
+          <div>
+            <p class="eyebrow">PROJECT ASSISTANT</p>
+            <h2>项目助手</h2>
+            <p class="assistant-sidebar-subtitle">{project.title} · 边看素材边改稿</p>
+          </div>
+          <IconButton icon="close" label="关闭助手" onClick={onClose} />
+        </header>
         <div class="assistant-layout">
           <div class="assistant-toolbar">
             <div class="assistant-mode">
@@ -309,7 +311,7 @@ export function AssistantPanel({
             </div>
           </div>
         </div>
-      </Modal>
+      </aside>
 
       <ConfirmDialog
         open={clearOpen}

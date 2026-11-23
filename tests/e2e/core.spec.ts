@@ -355,14 +355,20 @@ test('CLI text kernel and project assistant edits', async ({ page, request }) =>
   await expect(generate).not.toBeVisible();
 
   await page.getByRole('button', { name: '助手', exact: true }).click();
-  const assistant = page.locator('.modal-panel.assistant-modal');
+  const assistant = page.locator('.assistant-sidebar');
   await expect(assistant).toBeVisible();
+  await expect(page.locator('.project-content')).toBeVisible();
+  // The project remains interactive while the assistant is docked.
+  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await expect(page.locator('.kind-toolbar')).toBeVisible();
   await assistant.getByRole('button', { name: '覆盖式' }).click();
   await assistant.getByLabel('给项目助手的消息').fill('把原文改得更紧凑。');
   await assistant.getByRole('button', { name: '发送' }).click();
   await expect(assistant).toContainText('已更新 1 条素材', { timeout: 15_000 });
-  await page.screenshot({ path: path.join(SHOTS, '12-assistant.png'), fullPage: true });
-  await assistant.getByRole('button', { name: '关闭' }).click();
+  await dismissToasts(page);
+  await page.screenshot({ path: path.join(SHOTS, '12-assistant.png') });
+  await assistant.getByRole('button', { name: '关闭助手' }).click();
+  await expect(page.locator('.assistant-sidebar')).toHaveCount(0);
 
   const updatedResponse = await request.get(
     `/api/projects/${projectId}/assets/${originalAsset.id}`,

@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.2.0
+# 验收记录 · 媒材工坊 MediaDesk v0.2.1
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -12,8 +12,8 @@
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.2.0_aarch64.dmg` | 3,680,102 bytes / 3.51 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.2.0_aarch64.app.zip` | 3,227,031 bytes / 3.08 MiB | 由 .app 压缩 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.2.1_aarch64.dmg` | 3,681,195 bytes / 3.51 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.2.1_aarch64.app.zip` | 3,228,452 bytes / 3.08 MiB | 由 .app 压缩 |
 | 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,339,136 bytes / 3.18 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
@@ -21,9 +21,9 @@
 SHA-256：
 
 ```
-b8d329fac92070f98ec2f328bc08be88d79b60daa54f181a649b0c4ae4c4fcb8  mediadesk-server-macos-arm64
-88b3f9822be8a8af03d9e2d283c01aa5653fec1fbdb49702519a72cb131c5c09  媒材工坊_0.2.0_aarch64.app.zip
-fc597985362a07a17b6896a1b9104d71ae106acac7997f272008a03b569d9d72  媒材工坊_0.2.0_aarch64.dmg
+f78f4afe6dcf88c0f528d0da4c9b476a2708dd5bcf8e92f53d7b66c53bd02277  mediadesk-server-macos-arm64
+0026e35b79931275e2fc64c92b505d5be63b9119c55b71194d816f44580aa80d  媒材工坊_0.2.1_aarch64.app.zip
+e8a35ccf8d89e27d0a8016aa34c5ab0b3b2b40c6683399317aca8bd3932ef5a4  媒材工坊_0.2.1_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -40,7 +40,7 @@ fc597985362a07a17b6896a1b9104d71ae106acac7997f272008a03b569d9d72  媒材工坊_0
 | `npm test` | 3 个测试文件 / **12 tests passed** |
 | `cargo test --workspace --exclude mediadesk-desktop` | **19 tests passed**（6 unit + 13 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
-| `npm run build` | 通过；JS 222.34 kB（gzip 73.70 kB），CSS 101.83 kB（gzip 17.62 kB） |
+| `npm run build` | 通过；JS 222.71 kB（gzip 73.85 kB），CSS 104.25 kB（gzip 17.98 kB） |
 
 ### 2.2 Playwright 端到端
 
@@ -60,7 +60,7 @@ Running 5 tests using 1 worker
 
 - 设置页选择 **Claude Code CLI** → 状态检测到 mock CLI → 保存；
 - 生成文章时真实 spawn 本地进程，stdin 收到完整提示词，cwd 是项目目录；结果标识来源为 `claude`；
-- 项目助手打开会话 → 覆盖式发送 → 模型输出 JSON 编辑 → 服务端写入素材 → 项目页刷新；测试通过 API 反查正文已变为助手版本；
+- 项目页「助手」以右侧栏打开，项目内容仍可点击、切换 Tab → 覆盖式发送 → 模型输出 JSON 编辑 → 服务端写入素材 → 项目页刷新；测试通过 API 反查正文已变为助手版本；
 - 设置媒体模型 → 插图生成 → mock 返回 base64 PNG → 服务端写入 `illustration/`、生成 sidecar 与提示词快照 → 弹层显示真实图片 → 打开素材编辑器。
 
 原有覆盖仍通过：速记、立项、手写文章、API 测试、生成/保存、VSCode 上下文、上传、灯箱、文卡图、项目设置、技能、搜索、回收站、嵌套弹层 Esc、深色主题、移动端、工作区切换与恢复。
@@ -81,7 +81,7 @@ Running 5 tests using 1 worker
 |---|---|---|
 | 文本类生成走本地 CLI 内核 | 设置选择 API / Claude / OpenCode / DeepSeek；PATH 探测、绝对路径、`MEDIADESK_CLI_BIN` 覆盖；Windows `.cmd` 包装；cwd 锁项目；stdin 或 `{prompt}` | Playwright CLI 用例 + Rust CLI 集成测试；本机未装真实第三方 CLI，使用 mock |
 | 插图/视频走媒体生成模型 | 图像 OpenAI Images；视频 OpenAI / task / Seedance；URL 或 b64；任务轮询 | Rust 三类 mock 协议测试 + Playwright 图像生成落盘 |
-| 项目助手会话 | 项目页助手面板；历史 `.mediadesk/assistant/history.json`；建议/覆盖模式；只允许项目内 assetId | Playwright 覆盖式改稿 + Rust suggest/apply/history 测试 |
+| 项目助手会话 | 项目页右侧栏，素材同屏可浏览；历史 `.mediadesk/assistant/history.json`；建议/覆盖模式；只允许项目内 assetId | Playwright 右侧栏打开、项目内容可交互、覆盖式改稿；Rust suggest/apply/history 测试 |
 | 原有五类素材 / 预设 / 技能 / VSCode / 文卡图 | 保持并接入新媒体流程 | 原有 Playwright 与 Rust 测试全部通过 |
 | 小体积、低占用 | Rust/Axum + Preact + 系统 WebView | 见下方实测 |
 | Windows & macOS | 同一 Rust core + Tauri；CLI `.cmd` 适配 | macOS 本机验证；Windows 仅代码/CI，未实机 |
@@ -95,12 +95,12 @@ Running 5 tests using 1 worker
 | 浏览器服务二进制 | **3,339,136 bytes / 3.18 MiB** |
 | 浏览器服务 RSS（空载） | **8.6 MiB** |
 | 冷启动到 `/api/health` 可用 | **0.09s（缓存）– 0.55s（首次）** |
-| 前端 JS / CSS（gzip） | **73.70 KiB / 17.62 KiB** |
+| 前端 JS / CSS（gzip） | **73.85 KiB / 17.98 KiB** |
 | macOS `.app` | **5.95 MiB** |
 | macOS `.dmg` | **3.51 MiB** |
 | 原生进程 RSS | 空载约 35 MiB；打开工作台约 **94.7 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.2.0`，窗口 1320×901 可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.2.1`，窗口 1320×901 可交互；截图见 `docs/screenshots/native.png`。
 
 ---
 

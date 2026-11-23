@@ -18,7 +18,7 @@
    CLI 工具（`claude` / `deepseek` / `opencode`），而不是走 HTTP 大模型 API。
 2. **插图 / 视频走常规生成模型**：生成「插图 / 视频」时，调用图像 / 视频生成
    模型的 HTTP API（如 seedance、即梦，或 OpenAI 风格接口）。
-3. **项目内新增「助手」会话**：在项目页提供「助手」入口，点击弹出会话面板，
+3. **项目内新增「助手」会话**：在项目页提供「助手」入口，点击打开右侧会话栏，
    可以就媒体内容与用户交流并**改动素材**；助手同样走 CLI 内核。
 
 约束：
@@ -36,7 +36,7 @@
 |---|------|------|
 | ① | 本机没装任何 CLI | **自动探测 + 未找到时明确报错并给安装指引**（`CLI_NOT_FOUND`），先用 **mock CLI** 写链路和测试 |
 | ② | 插图/视频接入方式 | **通用可配置 HTTP 接入**（`base_url` + `api_key` + `model`），兼容 seedance / 即梦 / OpenAI 风格 |
-| ③ | 助手改动能力 | **会话面板 + 一个开关**，切换「建议式改动」vs「直接覆盖式改动」 |
+| ③ | 助手改动能力 | **右侧会话栏 + 一个开关**，切换「建议式改动」vs「直接覆盖式改动」 |
 
 分期实施：**① CLI 内核 + 文本生成分流 → ② 插图/视频生成模型接入 → ③ 项目助手会话**。
 
@@ -46,7 +46,7 @@
 |---|---|---|
 | ① CLI 内核 + 文本分流 | 完成 | PATH 探测、Windows `.cmd` 包装、stdin/`{prompt}`、超时与结构化错误；article/script/card 走所选内核；API 为默认兼容路径 |
 | ② 插图/视频媒体生成 | 完成 | 图像 OpenAI Images 兼容；视频 `openai` / `task` / `seedance` 协议；URL/base64 解析、轮询、落盘、sidecar、提示词快照 |
-| ③ 项目助手 | 完成 | 会话历史持久化、建议/覆盖模式、JSON 编辑协议、复用 `assets::update_asset`、项目页会话面板 |
+| ③ 项目助手 | 完成 | 会话历史持久化、建议/覆盖模式、JSON 编辑协议、复用 `assets::update_asset`、项目页右侧会话栏 |
 
 验证命令：`npm run check`、`cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings`、`npm run e2e`。当前测试规模：Rust 6 unit + 13 integration，Vitest 12，Playwright 5。
 
@@ -93,7 +93,7 @@ CLI mock 测试可参照 `mock_llm` 的写法。
 |------|----------|
 | `src/components/GenerateDialog.tsx` | 生成弹窗（全文 461 行）：kind 选择、预设/技能、`api.generate()`、结果确认后 `api.createAsset()` 保存；**分流后需显示内核来源** |
 | `src/pages/SettingsPage.tsx` | 设置页（392 行）：`PROVIDERS` 预设、`api.saveConfig()`/`api.testLlm()`；**新增内核 / 媒体生成配置区块** |
-| `src/pages/ProjectPage.tsx` | 项目页（597 行）：挂载 `GenerateDialog`；**新增「助手」按钮 + 会话面板** |
+| `src/pages/ProjectPage.tsx` | 项目页（597 行）：挂载 `GenerateDialog`；**新增「助手」按钮 + 右侧会话栏** |
 | `src/lib/api.ts` / `src/lib/types.ts` | 前端 API 封装与类型定义 |
 | `src/components/ui.tsx` | 组件库：`Button/IconButton/Badge/Spinner/Field/TagInput/Modal/ConfirmDialog/EmptyState/Segmented/InlineError/Skeleton` |
 | `src/lib/app-context.ts` | `useApp()`：`data.config`、`refreshConfig()`、`toast()` 等 |
@@ -146,7 +146,7 @@ CLI mock 测试可参照 `mock_llm` 的写法。
 1. `POST /api/projects/{id}/chat` 助手会话；历史存
    `projects/<dir>/.mediadesk/assistant/`（注意 `resolve_public_file` 不会
    服务隐藏目录，历史不外泄）；
-2. 前端 `ProjectPage` 加「助手」按钮 + 会话抽屉 + 「建议式 / 覆盖式」开关；
+2. 前端 `ProjectPage` 加「助手」按钮 + 右侧会话栏 + 「建议式 / 覆盖式」开关；
 3. 助手调用同样按第①期的内核分流；改动素材时复用 `assets::update_asset`。
 
 **每期完成后跑 `npm run check`**（typecheck + vitest + `cargo test --workspace

@@ -218,7 +218,8 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const linkedIdeas = app.data.ideas.filter((idea) => project.ideaIds.includes(idea.id));
 
   return (
-    <div class="page project-page">
+    <div class={`page project-page ${assistantOpen ? 'has-assistant' : ''}`}>
+      <div class="project-content">
       <button class="back-link" onClick={() => navigate('/projects')}>
         <Icon name="arrow-left" size={15} /> 所有项目
       </button>
@@ -249,8 +250,12 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             <Button variant="primary" icon="wand" onClick={() => openGenerate()}>
               生成素材
             </Button>
-            <Button variant="secondary" icon="spark" onClick={() => setAssistantOpen(true)}>
-              助手
+            <Button
+              variant={assistantOpen ? 'primary' : 'secondary'}
+              icon="spark"
+              onClick={() => setAssistantOpen((value) => !value)}
+            >
+              {assistantOpen ? '收起助手' : '助手'}
             </Button>
             <Button variant="secondary" icon="code" loading={vscodeLoading} onClick={openVscode}>
               在 VSCode 打开
@@ -493,16 +498,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
         </section>
       )}
 
-      <AssistantPanel
-        project={project}
-        open={assistantOpen}
-        onClose={() => setAssistantOpen(false)}
-        onChanged={async () => {
-          await refresh();
-          await app.refreshProjects();
-        }}
-      />
-
       <GenerateDialog
         project={project}
         open={generateOpen}
@@ -612,6 +607,19 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             </button>
           </div>
         </div>
+      ) : null}
+      </div>
+
+      {assistantOpen ? (
+        <AssistantPanel
+          project={project}
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          onChanged={async () => {
+            await refresh();
+            await app.refreshProjects();
+          }}
+        />
       ) : null}
     </div>
   );
