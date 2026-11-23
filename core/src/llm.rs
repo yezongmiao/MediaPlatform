@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::fs;
@@ -1028,6 +1029,382 @@ pub async fn complete_text(
         model: outcome.model,
         latency_ms: outcome.latency_ms,
         usage: outcome.usage,
+    })
+}
+
+fn stream_usage(protocol: Protocol, value: &serde_json::Value, usage: &mut Usage) {
+    match protocol {
+        Protocol::OpenAi => {
+            if let Some(u) = value.get("usage") {
+                usage.prompt_tokens = u
+                    .get("prompt_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(usage.prompt_tokens);
+                usage.completion_tokens = u
+                    .get("completion_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(usage.completion_tokens);
+                usage.total_tokens = u
+                    .get("total_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(usage.prompt_tokens + usage.completion_tokens);
+            }
+        }
+        Protocol::Anthropic => {
+            if let Some(input) = value
+                .pointer("/message/usage/input_tokens")
+                .and_then(|v| v.as_u64())
+            {
+                usage.prompt_tokens = input;
+            }
+            if let Some(output) = value
+                .pointer("/usage/output_tokens")
+                .and_then(|v| v.as_u64())
+            {
+                usage.completion_tokens = output;
+            }
+            usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+        }
+        Protocol::Responses => {
+            if let Some(u) = value.pointer("/response/usage") {
+                usage.prompt_tokens = u
+                    .get("input_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(usage.prompt_tokens);
+                usage.completion_tokens = u
+                    .get("output_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(usage.completion_tokens);
+                usage.total_tokens = u
+                    .get("total_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(usage.prompt_tokens + usage.completion_tokens);
+            }
+        }
+    }
+}
+
+fn handle_stream_payload(
+    protocol: Protocol,
+    payload: &str,
+    content: &mut String,
+    model: &mut String,
+    usage: &mut Usage,
+    on_delta: &mut dyn FnMut(&str),
+) -> Result<(), String> {
+    let value: serde_json::Value = match serde_json::from_str(payload) {
+        Ok(value) => value,
+        Err(_) => return Ok(()),
+    };
+    stream_usage(protocol, &value, usage);
+    let text = match protocol {
+        Protocol::OpenAi => {
+            if let Some(message) = value
+                .get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+            {
+                return Err(message.to_string());
+            }
+            if let Some(name) = value.get("model").and_then(|m| m.as_str()) {
+                if !name.is_empty() {
+                    *model = name.to_string();
+                }
+            }
+            value
+                .pointer("/choices/0/delta/content")
+                .map(content_to_text)
+                .or_else(|| {
+                    value
+                        .pointer("/choices/0/message/content")
+                        .map(content_to_text)
+                })
+                .unwrap_or_default()
+        }
+        Protocol::Anthropic => {
+            let kind = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if kind == "error" {
+                return Err(value
+                    .pointer("/error/message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Claude 流式响应返回错误")
+                    .to_string());
+            }
+            if kind == "message_start" {
+                if let Some(name) = value.pointer("/message/model").and_then(|v| v.as_str()) {
+                    *model = name.to_string();
+                }
+            }
+            if kind == "content_block_delta"
+                && value.pointer("/delta/type").and_then(|v| v.as_str()) == Some("text_delta")
+            {
+                value
+                    .pointer("/delta/text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            } else {
+                String::new()
+            }
+        }
+        Protocol::Responses => {
+            let kind = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            if kind == "error" || kind == "response.failed" {
+                return Err(value
+                    .pointer("/error/message")
+                    .or_else(|| value.pointer("/response/error/message"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Responses 流式响应返回错误")
+                    .to_string());
+            }
+            if kind == "response.completed" {
+                if let Some(name) = value.pointer("/response/model").and_then(|v| v.as_str()) {
+                    *model = name.to_string();
+                }
+            }
+            if kind == "response.output_text.delta" {
+                value
+                    .get("delta")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            } else if kind == "response.completed" && content.is_empty() {
+                value
+                    .pointer("/response/output_text")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .or_else(|| {
+                        let mut parts = Vec::new();
+                        if let Some(output) = value.pointer("/response/output") {
+                            collect_response_text(output, &mut parts);
+                        }
+                        (!parts.is_empty()).then(|| parts.join(""))
+                    })
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
+        }
+    };
+    if !text.is_empty() {
+        content.push_str(&text);
+        on_delta(&text);
+    }
+    Ok(())
+}
+
+/// Stream a text completion through the configured provider protocol.
+/// `on_delta` runs as chunks arrive; the final content is still returned for
+/// JSON parsing and history persistence.
+pub async fn stream_text<F>(
+    workspace: &std::path::Path,
+    client: &reqwest::Client,
+    system: &str,
+    user: &str,
+    max_tokens: Option<u32>,
+    mut on_delta: F,
+) -> ApiResult<TextCompletion>
+where
+    F: FnMut(&str) + Send,
+{
+    let config = store::load_config(workspace).await?.llm;
+    let provider = providers::for_config(&config);
+    if config.api_key.trim().is_empty()
+        && provider.auth != "none"
+        && !is_local_host(&config.base_url)
+    {
+        return Err(ApiError::new(
+            axum::http::StatusCode::PRECONDITION_FAILED,
+            "LLM_NOT_CONFIGURED",
+            "尚未配置大模型 API Key。请到「设置」填写，或使用本地 Ollama / 兼容服务。",
+        ));
+    }
+    if config.model.trim().is_empty() {
+        return Err(ApiError::bad_request("模型名称不能为空"));
+    }
+    let protocol = providers::effective_protocol(&config)?;
+    let url = providers::chat_url(&config)?;
+    let max_tokens = max_tokens.unwrap_or(config.max_tokens.max(16));
+    let temperature = config.temperature.clamp(0.0, 2.0);
+    let payload = match protocol {
+        Protocol::OpenAi => json!({
+            "model": config.model,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user }
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": true
+        }),
+        Protocol::Anthropic => json!({
+            "model": config.model,
+            "system": system,
+            "messages": [{ "role": "user", "content": user }],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": true
+        }),
+        Protocol::Responses => json!({
+            "model": config.model,
+            "instructions": system,
+            "input": user,
+            "max_output_tokens": max_tokens,
+            "stream": true
+        }),
+    };
+    let headers = providers::build_headers(&config, "mediadesk-assistant")?;
+    let started = Instant::now();
+    let response = client
+        .post(&url)
+        .timeout(Duration::from_secs(config.timeout_secs.clamp(5, 600)))
+        .headers(headers)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|err| {
+            ApiError::new(
+                axum::http::StatusCode::BAD_GATEWAY,
+                "LLM_REQUEST_FAILED",
+                if err.is_timeout() {
+                    "请求超时，请检查网络或调大超时时间".to_string()
+                } else if err.is_connect() {
+                    "无法连接到模型服务，请检查 Base URL 与网络".to_string()
+                } else {
+                    format!("请求失败：{err}")
+                },
+            )
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            format!(
+                "模型服务返回错误（HTTP {}）：{}",
+                status.as_u16(),
+                sanitize_provider_error(&body, &config.api_key)
+            ),
+        )
+        .with_details(json!({ "status": status.as_u16() })));
+    }
+
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if !content_type.starts_with("text/event-stream") {
+        // Some OpenAI-compatible gateways ignore `stream: true`. Fall back to
+        // parsing the normal response so the assistant still works.
+        let body = response.text().await.map_err(|err| {
+            ApiError::new(
+                axum::http::StatusCode::BAD_GATEWAY,
+                "LLM_REQUEST_FAILED",
+                format!("读取模型响应失败：{err}"),
+            )
+        })?;
+        let mut outcome = match protocol {
+            Protocol::OpenAi => parse_openai_response(&body, &config.model)?,
+            Protocol::Anthropic => parse_anthropic_response(&body, &config.model)?,
+            Protocol::Responses => parse_responses_response(&body, &config.model)?,
+        };
+        on_delta(&outcome.content);
+        outcome.latency_ms = started.elapsed().as_millis() as u64;
+        return Ok(TextCompletion {
+            content: outcome.content,
+            model: outcome.model,
+            latency_ms: outcome.latency_ms,
+            usage: outcome.usage,
+        });
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut buffer = String::new();
+    let mut data = String::new();
+    let mut content = String::new();
+    let mut model = config.model.clone();
+    let mut usage = Usage::default();
+    let mut stream_error: Option<String> = None;
+    let mut done = false;
+
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|err| {
+            ApiError::new(
+                axum::http::StatusCode::BAD_GATEWAY,
+                "LLM_REQUEST_FAILED",
+                format!("读取模型流失败：{err}"),
+            )
+        })?;
+        buffer.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(position) = buffer.find('\n') {
+            let line = buffer[..position].trim_end_matches('\r').to_string();
+            buffer.drain(..=position);
+            if line.is_empty() {
+                if !data.is_empty() {
+                    let payload = std::mem::take(&mut data);
+                    if payload.trim() == "[DONE]" {
+                        done = true;
+                        break;
+                    }
+                    if let Err(message) = handle_stream_payload(
+                        protocol,
+                        &payload,
+                        &mut content,
+                        &mut model,
+                        &mut usage,
+                        &mut on_delta,
+                    ) {
+                        stream_error = Some(message);
+                        break;
+                    }
+                }
+            } else if let Some(rest) = line.strip_prefix("data:") {
+                if !data.is_empty() {
+                    data.push('\n');
+                }
+                data.push_str(rest.trim_start());
+            }
+        }
+        if done || stream_error.is_some() {
+            break;
+        }
+    }
+
+    if !done && stream_error.is_none() && !data.is_empty() {
+        if let Err(message) = handle_stream_payload(
+            protocol,
+            &data,
+            &mut content,
+            &mut model,
+            &mut usage,
+            &mut on_delta,
+        ) {
+            stream_error = Some(message);
+        }
+    }
+    if let Some(message) = stream_error {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            format!("模型流式响应错误：{message}"),
+        ));
+    }
+    let content = content.trim().to_string();
+    if content.is_empty() {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            "模型流式返回了空内容，请重试或更换模型",
+        ));
+    }
+    Ok(TextCompletion {
+        content,
+        model,
+        latency_ms: started.elapsed().as_millis() as u64,
+        usage,
     })
 }
 

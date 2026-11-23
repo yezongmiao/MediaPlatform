@@ -399,3 +399,15 @@ export interface AssistantChatResponse {
   warnings: string[];
   messages: AssistantMessage[];
 }
+
+export interface AssistantApplyResponse {
+  applied: boolean;
+  warnings: string[];
+  messages: AssistantMessage[];
+}
+
+export type AssistantStreamEvent =
+  | { type: 'status'; message: string }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; response: AssistantChatResponse }
+  | { type: 'error'; code: string; message: string };

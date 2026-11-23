@@ -13,7 +13,7 @@
 - **服务商目录与模型列表**：Claude / Codex / OpenCode Go / 字节方舟 / 小米 / OpenRouter / Kimi / MiniMax / DeepSeek / Ollama / 自定义；折叠列表、真实 `/models` 获取、特殊请求头自动处理。
 - **文本内核可切换**：文章、脚本、文卡图可走 API，也可调用本机 `claude` / `codex` / `opencode` / `deepseek` CLI；提示词与结果仍可预览、快照。
 - **媒体模型直连**：插图走 OpenAI Images 兼容接口，视频支持 OpenAI / 通用 task / Seedance 任务协议，成功后直接落进项目素材库。
-- **项目助手右侧栏**：与素材同屏对话，助手读取项目与素材，支持「建议式」与「覆盖式」改稿。
+- **项目助手右侧栏**：流式接收回复，边生成边阅读；建议式给出「采纳并写入」按钮，确认后才覆盖素材。
 - **VSCode 协作**：一键生成 `AGENTS.md`、`CLAUDE.md`、技能/预设副本、`.vscode/` 与机器可读上下文，并调用 `code` 打开项目。
 - **文卡图 Studio**：内置 5 套主题与 3 种画幅，Canvas 导出 1080px PNG 并直接入库。
 - **本地优先**：无账号、无遥测、无外部字体/CDN；API Key 只存在本机 `.mediadesk/config.json`（Unix 下权限 0600）。
@@ -36,11 +36,15 @@
 |---|---|
 | ![项目助手](docs/screenshots/assistant.png) | ![媒体生成](docs/screenshots/media-generate.png) |
 
-| 服务商与模型列表 |
-|---|
-| ![服务商](docs/screenshots/providers.png) |
+| 服务商与模型列表 | 助手流式回复 |
+|---|---|
+| ![服务商](docs/screenshots/providers.png) | ![助手流式回复](docs/screenshots/assistant-streaming.png) |
 
-桌面原生窗口（Tauri 2 + 系统 WKWebView，安装包 3.56MB）：
+| 建议式采纳 |
+|---|
+| ![建议式采纳](docs/screenshots/assistant-suggest.png) |
+
+桌面原生窗口（Tauri 2 + 系统 WKWebView，安装包 3.60MB）：
 
 ![原生窗口](docs/screenshots/native.png)
 
@@ -88,9 +92,9 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `release/媒材工坊_0.3.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.56 MB |
-| `release/媒材工坊_0.3.0_aarch64.app.zip` | 免安装应用 | 3.12 MB |
-| `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.26 MB |
+| `release/媒材工坊_0.4.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.60 MB |
+| `release/媒材工坊_0.4.0_aarch64.app.zip` | 免安装应用 | 3.15 MB |
+| `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.33 MB |
 
 实测：浏览器服务空载 RSS ≈ 8.6MB，冷启动 0.1–0.6s；原生主进程空载约 35MB、打开工作台约 95MB（系统 WKWebView，进程另计）。完整数据见 [验收记录](docs/ACCEPTANCE.md)。
 
@@ -105,7 +109,7 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
    - 删除进 `.mediadesk/trash/`，可手动恢复。
 4. **生成文本素材**：项目页「生成素材」→ 选文章/脚本/文卡图、预设、技能、写要求 → 可先「预览/复制提示词」而不调用模型 → 结果确认标题后「保存为素材」。提示词快照自动写入 `prompts/`。文本走当前选择的文本内核（API 或本机 CLI）。
 5. **生成插图和视频**：选插图/视频 → 写画面要求 → 「生成并保存」。媒体模型成功后，文件直接写入 `illustration/` 或 `video/`，sidecar 记录提示词与模型，不需要额外上传。
-6. **和项目助手对话**：项目页「助手」→ 右侧栏打开，项目素材仍在左侧可浏览、可打开 → 选择建议式/覆盖式 → 发送。助手读取项目简介、关联灵感与全部素材；覆盖式会把模型返回的完整正文直接写入对应素材。
+6. **和项目助手对话**：项目页「助手」→ 右侧栏打开，项目素材仍在左侧可浏览、可打开 → 选择建议式/覆盖式 → 发送。助手读取项目简介、关联灵感与全部素材，回复通过 SSE 流式显示；**建议式**只展示建议，点「采纳并写入」并确认后才覆盖；**覆盖式**直接写入对应素材。
 7. **VSCode**：项目页「在 VSCode 打开」。若系统没有 `code` 命令，会明确提示并给出可复制的手动命令，同时上下文文件已经生成。
 8. **沉淀方法**：「技能与预设」里编辑方法论与各类素材的写作规范；项目设置可勾选要随项目复制的技能/预设。
 
@@ -126,6 +130,8 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 - 自动从 `PATH` 探测；也可填写绝对路径，或用 `MEDIADESK_CLI_BIN` 环境变量覆盖。
 - 子进程的 cwd 锁定当前项目目录；超时、找不到、非零退出都有明确错误码（`CLI_NOT_FOUND` / `CLI_TIMEOUT` / `CLI_FAILED`）。
 - 默认参数因内核而异（如 Claude 用 `-p`）；可在「附加参数」里修改，支持 `{prompt}` 占位符。
+- 项目助手对 Claude Code 使用 `-p --output-format stream-json --verbose --include-partial-messages`，把文本增量转发到界面；普通素材生成仍使用非流式输出。
+- API 助手使用 OpenAI / Anthropic / Responses 的流式 SSE；若网关不支持流式，会自动回退到普通响应。
 - 本机未安装 CLI 时，切换到 API 即可继续使用；插图和视频始终走媒体模型。
 
 ## 服务商与模型列表
@@ -175,8 +181,10 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 ## 项目助手
 
 - 入口在项目页「助手」，以**右侧栏**停靠：桌面端与项目内容并排，素材可继续浏览和打开；窄屏切换为侧滑抽屉。会话历史保存到 `projects/<项目>/.mediadesk/assistant/history.json`（隐藏目录，不会被文件接口暴露）。
-- 助手读取项目、关联灵感和全部素材，通过当前文本内核回复。
-- **建议式**：只展示修改建议，不改文件。
+- 助手读取项目、关联灵感和全部素材，通过当前文本内核回复；回复通过 SSE 实时显示，界面会展示当前阶段、已接收文本与等待秒数。
+- **流式 CLI**：Claude Code 使用 stream-json 增量；其他 CLI 直接转发 stdout 增量。自定义参数会优先于默认流式参数。
+- **流式 API**：OpenAI Chat、Anthropic Messages、OpenAI Responses 均解析 SSE；非 SSE 网关自动回退。
+- **建议式**：只展示修改建议，不改文件；每条建议下方有「采纳并写入」按钮，确认后由服务端应用并标记 `applied`，刷新/重启后按钮不会重复出现。
 - **覆盖式**：把 `edits` 里的完整 `content` / `title` 直接写入对应素材；服务端只接受项目内真实 assetId。
 - 模型必须输出约定 JSON；无法解析时退化为普通对话，不会误改素材。
 
@@ -216,7 +224,7 @@ npm run e2e            # Playwright：真实 Rust 服务 + mock LLM/媒体 + moc
 cargo clippy -p mediadesk-core -p mediadesk-server --all-targets -- -D warnings
 ```
 
-E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 文卡图导出 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；切换工作区；CLI 文本内核 → 项目助手覆盖式改稿；媒体生成并落盘；服务商折叠、模型列表获取与搜索。
+E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 文卡图导出 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；切换工作区；CLI 文本内核 → 项目助手流式建议 → 「采纳并写入」覆盖素材；媒体生成并落盘；服务商折叠、模型列表获取与搜索。
 
 Playwright 默认直接驱动系统 Microsoft Edge，不额外下载 Chromium；CI 无 Edge 时可用 `CHROMIUM_PATH` 指定托管浏览器，或设置 `PW_BROWSER=chromium`。
 
@@ -224,13 +232,12 @@ Playwright 默认直接驱动系统 Microsoft Edge，不额外下载 Chromium；
 
 ## 已知边界
 
-- 本机安装的 `claude` 已检测到，但未用真实账号发起生成；`opencode` / `codex` / `deepseek` CLI 是否安装取决于机器，未安装时会明确报错。CLI 测试使用 mock CLI，未对真实第三方 CLI 的每一种参数组合做验收。
+- 本机安装的 `claude` 已检测到，但未用真实账号发起生成；`opencode` / `codex` / `deepseek` CLI 是否安装取决于机器，未安装时会明确报错。CLI 测试使用 mock CLI；Claude stream-json 的增量解析用 mock 事件验证，未对真实账号/每种 CLI 参数组合做验收。
 - 服务商模型列表接口已对 OpenRouter / OpenCode Go 做真实网络验证；其他厂商使用通用 `/models` 解析，需要用户自己的 Key，未逐一用真实账号验证。
 - Anthropic Messages 与 OpenAI Responses 协议通过本地 mock 验证，未用真实付费账号发起请求。
 - 媒体接口的兼容范围是 OpenAI Images、OpenAI Videos、通用 task 与 Seedance；不同厂商的额外字段/签名方式可能需要通过创建路径和风格适配。
-- 项目助手不是实时流式对话；每次请求完成后再返回，超时取决于 CLI/模型配置。
 - 当前 macOS 构建为 Apple Silicon（arm64）；未提供 Intel / universal 包。
-- LLM 调用为非流式，长文生成时界面显示等待态。
+- 普通素材生成仍为非流式，长文生成时界面显示等待态；项目助手已使用流式。
 - 单用户本地应用，无多端同步与协作。
 - Windows 未在本机实机运行；CI 构建配置已提供。
 - 不包含代码签名与公证；对外分发时需配置 Apple Developer / Windows 证书。

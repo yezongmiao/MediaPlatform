@@ -6,6 +6,7 @@ import { KINDS } from '../lib/types';
 import { Button, ConfirmDialog, IconButton, InlineError } from './ui';
 import { Icon } from './Icon';
 import { MarkdownView } from './MarkdownView';
+import { extractStreamReply } from '../lib/assistant-stream';
 import { navigate } from '../lib/router';
 
 const SUGGESTIONS = [
@@ -24,6 +25,7 @@ function messageTime(value: string): string {
 function kernelLabel(kernel: string): string {
   if (kernel === 'api') return 'API 大模型';
   if (kernel === 'claude') return 'Claude Code CLI';
+  if (kernel === 'codex') return 'Codex CLI';
   if (kernel === 'opencode') return 'OpenCode CLI';
   if (kernel === 'deepseek') return 'DeepSeek CLI';
   return kernel;
@@ -49,6 +51,11 @@ export function AssistantPanel({
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [streamText, setStreamText] = useState('');
+  const [streamStatus, setStreamStatus] = useState('');
+  const [elapsed, setElapsed] = useState(0);
+  const [applyTarget, setApplyTarget] = useState<AssistantMessage | null>(null);
+  const [applying, setApplying] = useState(false);
   const [kernel, setKernel] = useState('');
   const [clearOpen, setClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -76,32 +83,92 @@ export function AssistantPanel({
     if (!open) return;
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [messages, open]);
+  }, [messages, streamText, streamStatus, loading, open]);
+
+  useEffect(() => {
+    if (!loading) {
+      setElapsed(0);
+      return;
+    }
+    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [loading]);
 
   const send = async () => {
     const message = input.trim();
-    if (!message || loading) return;
+    if (!message || loading || historyLoading) return;
+    const pendingId = `pending-${Date.now()}`;
+    const pendingMessage: AssistantMessage = {
+      id: pendingId,
+      role: 'user',
+      content: message,
+      createdAt: new Date().toISOString(),
+    };
+    setMessages((current) => [...current, pendingMessage]);
+    setInput('');
     setLoading(true);
+    setElapsed(0);
+    setStreamText('');
+    setStreamStatus('正在读取项目与素材…');
     setError('');
     setErrorCode('');
     setWarnings([]);
     try {
-      const response = await api.chatAssistant(project.id, { message, mode });
+      const response = await api.streamAssistant(
+        project.id,
+        { message, mode },
+        (event) => {
+          if (event.type === 'status') {
+            setStreamStatus(event.message);
+          } else if (event.type === 'delta') {
+            setStreamText((current) => current + event.text);
+            setStreamStatus('正在接收…');
+          }
+        },
+      );
       setMessages(response.messages);
       setKernel(response.kernel);
-      setInput('');
       setWarnings(response.warnings);
+      setStreamText('');
+      setStreamStatus('');
       if (response.applied) {
         await onChanged();
         await Promise.all([app.refreshProjects(), app.refreshWorkspace()]);
         app.toast({ message: '助手已更新项目素材', tone: 'success' });
       }
     } catch (err) {
+      setMessages((current) => current.filter((item) => item.id !== pendingId));
+      setInput(message);
       const apiErr = err instanceof ApiError ? err : null;
       setError(apiErr?.message ?? '助手回复失败');
       setErrorCode(apiErr?.code ?? '');
     } finally {
       setLoading(false);
+      setStreamText('');
+      setStreamStatus('');
+    }
+  };
+
+  const applySuggested = async () => {
+    if (!applyTarget) return;
+    setApplying(true);
+    setError('');
+    try {
+      const response = await api.applyAssistantSuggestion(project.id, applyTarget.id);
+      setMessages(response.messages);
+      setWarnings(response.warnings);
+      if (response.applied) {
+        await onChanged();
+        await Promise.all([app.refreshProjects(), app.refreshWorkspace()]);
+        app.toast({ message: '已采纳建议并覆盖素材', tone: 'success' });
+      } else {
+        app.toast({ message: '没有素材被更新，请检查警告信息', tone: 'error' });
+      }
+      setApplyTarget(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '采纳建议失败');
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -130,6 +197,8 @@ export function AssistantPanel({
 
   const kindLabelFor = (id: string): Kind | undefined =>
     KINDS.find((kind) => project.assets[kind.id]?.some((asset) => asset.id === id))?.id;
+
+  const streamPreview = extractStreamReply(streamText);
 
   return (
     <>
@@ -162,7 +231,7 @@ export function AssistantPanel({
                 </button>
               </div>
               <span class="assistant-mode-hint">
-                {mode === 'suggest' ? '只展示修改建议，不动文件。' : '会把建议直接写入素材，请谨慎。'}
+                {mode === 'suggest' ? '只展示建议；点「采纳并写入」后才会覆盖。' : '会把建议直接写入素材，请谨慎。'}
               </span>
             </div>
             <div class="assistant-toolbar-right">
@@ -232,6 +301,20 @@ export function AssistantPanel({
                               </div>
                             );
                           })}
+                          {!message.applied ? (
+                            <div class="assistant-edits-actions">
+                              <span>确认采用这组改动后才会写入文件</span>
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                icon="check"
+                                disabled={loading}
+                                onClick={() => setApplyTarget(message)}
+                              >
+                                采纳并写入
+                              </Button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -254,9 +337,29 @@ export function AssistantPanel({
               </div>
             )}
             {loading ? (
-              <div class="assistant-typing">
-                <span class="spinner" />
-                <span>助手正在读取项目并组织回复…</span>
+              <div class="assistant-message is-assistant is-streaming">
+                <div class="assistant-avatar"><Icon name="spark" size={16} /></div>
+                <div class="assistant-bubble">
+                  <div class="assistant-bubble-head">
+                    <strong>项目助手</strong>
+                    <small>{elapsed ? `${elapsed}s · 流式` : '流式'}</small>
+                  </div>
+                  {streamPreview ? (
+                    <>
+                      <MarkdownView source={streamPreview} />
+                      <span class="assistant-stream-caret" aria-hidden="true" />
+                      <p class="assistant-stream-meta">
+                        {streamStatus || '正在接收…'}{elapsed ? ` · ${elapsed}s` : ''}
+                      </p>
+                    </>
+                  ) : (
+                    <div class="assistant-stream-wait">
+                      <span class="spinner" />
+                      <span>{streamStatus || '正在读取项目并组织回复…'}</span>
+                      {elapsed ? <small>{elapsed}s</small> : null}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : null}
           </div>
@@ -298,12 +401,12 @@ export function AssistantPanel({
               }}
             />
             <div class="assistant-composer-foot">
-              <span>Enter 发送 · Shift + Enter 换行 · {mode === 'apply' ? '覆盖模式会直接写文件' : '建议模式不会改文件'}</span>
+              <span>Enter 发送 · Shift + Enter 换行 · {mode === 'apply' ? '覆盖模式会直接写文件' : '建议模式需点「采纳并写入」'}</span>
               <Button
                 variant="primary"
                 icon="arrow-right"
                 loading={loading}
-                disabled={!input.trim() || historyLoading}
+                disabled={!input.trim() || historyLoading || loading}
                 onClick={send}
               >
                 发送
@@ -312,6 +415,22 @@ export function AssistantPanel({
           </div>
         </div>
       </aside>
+
+      <ConfirmDialog
+        open={Boolean(applyTarget)}
+        title="采纳这组修改？"
+        message={
+          applyTarget
+            ? `将覆盖 ${applyTarget.edits?.length ?? 0} 条素材的现有内容，并写入项目文件。采纳后不能在助手内自动回滚。`
+            : ''
+        }
+        confirmLabel="覆盖素材"
+        loading={applying}
+        onClose={() => {
+          if (!applying) setApplyTarget(null);
+        }}
+        onConfirm={applySuggested}
+      />
 
       <ConfirmDialog
         open={clearOpen}

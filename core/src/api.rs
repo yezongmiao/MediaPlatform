@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -6,7 +7,10 @@ use axum::{
     body::Body,
     extract::{DefaultBodyLimit, Path, Query, Request, State},
     http::{header, StatusCode},
-    response::{IntoResponse, Response},
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::{get, post, put},
     Json, Router,
 };
@@ -143,6 +147,11 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(get_assistant_history)
                 .post(chat_with_assistant)
                 .delete(clear_assistant_history),
+        )
+        .route("/api/projects/{id}/chat/stream", post(stream_assistant))
+        .route(
+            "/api/projects/{id}/chat/apply",
+            post(apply_assistant_suggestion),
         )
         .route("/api/search", get(search))
         .route("/files/{*path}", get(serve_file))
@@ -772,6 +781,39 @@ async fn chat_with_assistant(
 ) -> ApiResult<Json<AssistantChatResponse>> {
     Ok(Json(
         assistant::chat(&state.workspace(), &state.client, &id, req).await?,
+    ))
+}
+
+async fn stream_assistant(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<AssistantChatRequest>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<AssistantStreamEvent>();
+    let workspace = state.workspace();
+    let client = state.client.clone();
+    tokio::spawn(async move {
+        assistant::chat_stream(&workspace, &client, &id, req, tx).await;
+    });
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|event| {
+            let data = serde_json::to_string(&event).unwrap_or_else(|_| {
+                "{\"type\":\"error\",\"code\":\"STREAM_ENCODE\",\"message\":\"事件编码失败\"}"
+                    .to_string()
+            });
+            (Ok::<_, Infallible>(Event::default().data(data)), rx)
+        })
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn apply_assistant_suggestion(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<AssistantApplyRequest>,
+) -> ApiResult<Json<AssistantApplyResponse>> {
+    Ok(Json(
+        assistant::apply_saved_suggestion(&state.workspace(), &id, &req.message_id).await?,
     ))
 }
 

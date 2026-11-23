@@ -361,9 +361,14 @@ test('CLI text kernel and project assistant edits', async ({ page, request }) =>
   // The project remains interactive while the assistant is docked.
   await page.locator('.project-tab').filter({ hasText: '文章' }).click();
   await expect(page.locator('.kind-toolbar')).toBeVisible();
-  await assistant.getByRole('button', { name: '覆盖式' }).click();
+  await assistant.getByRole('button', { name: '建议式' }).click();
   await assistant.getByLabel('给项目助手的消息').fill('把原文改得更紧凑。');
   await assistant.getByRole('button', { name: '发送' }).click();
+  await expect(assistant).toContainText('建议修改 1 条素材', { timeout: 15_000 });
+  await assistant.getByRole('button', { name: '采纳并写入' }).click();
+  const adopt = page.getByRole('dialog');
+  await expect(adopt).toContainText('覆盖 1 条素材');
+  await adopt.getByRole('button', { name: '覆盖素材' }).click();
   await expect(assistant).toContainText('已更新 1 条素材', { timeout: 15_000 });
   await dismissToasts(page);
   await page.screenshot({ path: path.join(SHOTS, '12-assistant.png') });

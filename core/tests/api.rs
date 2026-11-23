@@ -149,6 +149,21 @@ async fn mock_llm() -> (String, tokio::task::JoinHandle<()>) {
             )
                 .into_response();
         }
+        if payload.get("stream").and_then(Value::as_bool) == Some(true) {
+            let chunk = json!({
+                "id": "mock-stream",
+                "model": "mock-model-1",
+                "choices": [{"index": 0, "delta": {
+                    "content": "{\"reply\":\"流式回复已到达。\",\"edits\":[]}"
+                }}]
+            });
+            let body = format!("data: {chunk}\n\ndata: [DONE]\n\n");
+            return (
+                [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                body,
+            )
+                .into_response();
+        }
         let instruction = payload
             .get("messages")
             .and_then(|m| m.as_array())
@@ -1002,6 +1017,34 @@ async fn assistant_suggests_and_applies_asset_edits() {
         .await;
     assert!(original["content"].as_str().unwrap().contains("原始正文"));
 
+    // A saved suggestion can be adopted later, after the original turn ended.
+    let suggestion_id = suggested["messages"][1]["id"].as_str().unwrap().to_string();
+    let (status, adopted) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat/apply"),
+            Some(json!({"messageId": suggestion_id})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{adopted}");
+    assert_eq!(adopted["applied"], true);
+    assert_eq!(adopted["messages"][1]["applied"], true);
+    let (_, adopted_history) = server
+        .call("GET", &format!("/api/projects/{project_id}/chat"), None)
+        .await;
+    assert_eq!(adopted_history["messages"][1]["applied"], true);
+    let (_, adopted_asset) = server
+        .call(
+            "GET",
+            &format!("/api/projects/{project_id}/assets/{asset_id}"),
+            None,
+        )
+        .await;
+    assert!(adopted_asset["content"]
+        .as_str()
+        .unwrap()
+        .contains("助手修订版"));
+
     let (status, applied) = server
         .call(
             "POST",
@@ -1037,6 +1080,20 @@ async fn assistant_suggests_and_applies_asset_edits() {
         .join(".mediadesk/assistant/history.json");
     assert!(history_file.exists());
 
+    let (status, streamed) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat/stream"),
+            Some(json!({"message": "再流式总结一次。", "mode": "suggest"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let streamed = streamed.as_str().unwrap_or_default();
+    assert!(streamed.contains("\"type\":\"status\""), "{streamed}");
+    assert!(streamed.contains("\"type\":\"delta\""), "{streamed}");
+    assert!(streamed.contains("\"type\":\"done\""), "{streamed}");
+    assert!(streamed.contains("助手修订版"), "{streamed}");
+
     let (status, _) = server
         .call("DELETE", &format!("/api/projects/{project_id}/chat"), None)
         .await;
@@ -1046,6 +1103,93 @@ async fn assistant_suggests_and_applies_asset_edits() {
         .call("GET", &format!("/api/projects/{project_id}/chat"), None)
         .await;
     assert_eq!(history["messages"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn assistant_api_streams_sse_events() {
+    let server = TestServer::spawn().await;
+    let project = server.create_project("API 流式项目", vec![]).await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let (llm_url, _mock) = mock_llm().await;
+    let (status, config) = server
+        .call(
+            "PUT",
+            "/api/config",
+            Some(json!({
+                "baseUrl": llm_url,
+                "apiKey": "good-key",
+                "model": "mock-model",
+                "temperature": 0.4,
+                "maxTokens": 512,
+                "timeoutSecs": 20
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{config}");
+
+    let (status, streamed) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat/stream"),
+            Some(json!({"message": "用 API 流式总结。", "mode": "suggest"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let streamed = streamed.as_str().unwrap_or_default();
+    assert!(streamed.contains("\"type\":\"status\""), "{streamed}");
+    assert!(streamed.contains("\"type\":\"delta\""), "{streamed}");
+    assert!(streamed.contains("流式回复已到达"), "{streamed}");
+    assert!(streamed.contains("\"type\":\"done\""), "{streamed}");
+    let (_, history) = server
+        .call("GET", &format!("/api/projects/{project_id}/chat"), None)
+        .await;
+    assert_eq!(history["messages"].as_array().unwrap().len(), 2);
+    assert_eq!(history["messages"][1]["applied"], false);
+}
+
+#[tokio::test]
+async fn assistant_stream_parses_claude_json_events() {
+    let server = TestServer::spawn().await;
+    let project = server.create_project("Claude 流式项目", vec![]).await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let cli_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-stream-cli.sh");
+    assert!(cli_path.is_file());
+    let (status, _) = server
+        .call(
+            "PUT",
+            "/api/config/kernel",
+            Some(json!({
+                "kernel": "claude",
+                "binary": cli_path.to_string_lossy(),
+                "args": [],
+                "timeoutSecs": 60
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, streamed) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat/stream"),
+            Some(json!({"message": "流式回复测试", "mode": "suggest"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let streamed = streamed.as_str().unwrap_or_default();
+    assert!(streamed.contains("\"type\":\"delta\""), "{streamed}");
+    assert!(streamed.contains("流式解析成功"), "{streamed}");
+    assert!(streamed.contains("\"type\":\"done\""), "{streamed}");
+    assert!(streamed.contains("\"kernel\":\"claude\""), "{streamed}");
+    let (_, history) = server
+        .call("GET", &format!("/api/projects/{project_id}/chat"), None)
+        .await;
+    assert_eq!(history["messages"].as_array().unwrap().len(), 2);
+    assert!(history["messages"][1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("流式解析成功"));
 }
 
 #[tokio::test]

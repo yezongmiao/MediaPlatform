@@ -3,7 +3,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use axum::http::StatusCode;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::error::{ApiError, ApiResult};
@@ -196,6 +196,295 @@ fn apply_args(args: &[String], prompt: &str) -> (Vec<String>, bool) {
     (rendered, prompt_in_arg)
 }
 
+fn build_command(binary: &Path, args: &[String], cwd: &Path) -> Command {
+    let mut command = {
+        #[cfg(windows)]
+        {
+            let is_script = binary
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"))
+                .unwrap_or(false);
+            if is_script {
+                let mut cmd = Command::new("cmd");
+                cmd.arg("/C").arg(binary);
+                cmd
+            } else {
+                Command::new(binary)
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            Command::new(binary)
+        }
+    };
+    command
+        .args(args)
+        .current_dir(cwd)
+        .env("NO_COLOR", "1")
+        .env("MEDIADESK_PROJECT_DIR", cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    command
+}
+
+/// Run a CLI and forward its output as it arrives. Claude Code uses stream-json
+/// by default here, so the assistant can render text before the turn ends.
+pub async fn run_stream<F>(
+    cwd: &Path,
+    cli: &CliConfig,
+    kernel: Kernel,
+    prompt: &str,
+    mut on_delta: F,
+) -> ApiResult<CliOutcome>
+where
+    F: FnMut(&str) + Send,
+{
+    let binary = resolve(cli, kernel).ok_or_else(|| {
+        missing_error(
+            kernel,
+            cli.binary
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty()),
+        )
+    })?;
+
+    let mut stream_json = false;
+    let args: Vec<String> = if cli.args.is_empty() {
+        if kernel == Kernel::Claude {
+            stream_json = true;
+            vec![
+                "-p".to_string(),
+                "--output-format".to_string(),
+                "stream-json".to_string(),
+                "--verbose".to_string(),
+                "--include-partial-messages".to_string(),
+            ]
+        } else {
+            kernel
+                .default_args()
+                .iter()
+                .map(|arg| arg.to_string())
+                .collect()
+        }
+    } else {
+        cli.args.clone()
+    };
+    let (args, prompt_in_arg) = apply_args(&args, prompt);
+
+    let started = Instant::now();
+    let mut child = build_command(&binary, &args, cwd).spawn().map_err(|err| {
+        ApiError::new(
+            StatusCode::CONFLICT,
+            "CLI_START_FAILED",
+            format!("启动 {} 失败：{err}", kernel.label()),
+        )
+        .with_details(
+            serde_json::json!({ "kernel": kernel.id(), "binary": binary.to_string_lossy() }),
+        )
+    })?;
+
+    let stdin_task = if prompt_in_arg {
+        child.stdin.take();
+        None
+    } else if let Some(mut stdin) = child.stdin.take() {
+        let prompt = prompt.to_string();
+        Some(tokio::spawn(async move {
+            let _ = stdin.write_all(prompt.as_bytes()).await;
+        }))
+    } else {
+        None
+    };
+
+    let stderr_task = child.stderr.take().map(|stderr| {
+        tokio::spawn(async move {
+            let mut text = String::new();
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                text.push_str(&line);
+                text.push('\n');
+            }
+            text
+        })
+    });
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| ApiError::internal("无法读取 CLI 输出"))?;
+    let timeout = Duration::from_secs(cli.timeout_secs.clamp(10, 1800));
+
+    let read_and_wait = async {
+        let mut lines = BufReader::new(stdout).lines();
+        let mut raw = String::new();
+        let mut content = String::new();
+        let mut final_result: Option<String> = None;
+        while let Some(line) = lines.next_line().await? {
+            if stream_json {
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&line) {
+                    let kind = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if kind == "error"
+                        || value
+                            .get("is_error")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    {
+                        let message = value
+                            .get("error")
+                            .and_then(|v| v.get("message"))
+                            .and_then(|v| v.as_str())
+                            .or_else(|| value.get("result").and_then(|v| v.as_str()))
+                            .unwrap_or("Claude CLI 返回错误");
+                        return Err(ApiError::new(
+                            StatusCode::BAD_GATEWAY,
+                            "CLI_FAILED",
+                            message.to_string(),
+                        ));
+                    }
+                    if kind == "result" {
+                        if let Some(result) = value.get("result").and_then(|v| v.as_str()) {
+                            final_result = Some(result.to_string());
+                        }
+                    }
+                    let event = value.get("event").unwrap_or(&value);
+                    let event_kind = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    if event_kind == "content_block_delta" {
+                        let delta = event.get("delta");
+                        if delta.and_then(|d| d.get("type")).and_then(|v| v.as_str())
+                            == Some("text_delta")
+                        {
+                            if let Some(text) =
+                                delta.and_then(|d| d.get("text")).and_then(|v| v.as_str())
+                            {
+                                if !text.is_empty() {
+                                    content.push_str(text);
+                                    on_delta(text);
+                                }
+                                continue;
+                            }
+                        }
+                    }
+                    raw.push_str(&line);
+                    raw.push('\n');
+                } else {
+                    raw.push_str(&line);
+                    raw.push('\n');
+                }
+            } else {
+                content.push_str(&line);
+                content.push('\n');
+                on_delta(&format!("{line}\n"));
+            }
+        }
+        let status = child.wait().await?;
+        Ok::<_, ApiError>((status, raw, content, final_result))
+    };
+
+    let outcome = match tokio::time::timeout(timeout, read_and_wait).await {
+        Ok(Ok(value)) => value,
+        Ok(Err(err)) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            if let Some(task) = stdin_task {
+                task.abort();
+            }
+            if let Some(task) = stderr_task {
+                task.abort();
+            }
+            return Err(err);
+        }
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            if let Some(task) = stdin_task {
+                task.abort();
+            }
+            if let Some(task) = stderr_task {
+                task.abort();
+            }
+            return Err(ApiError::new(
+                StatusCode::GATEWAY_TIMEOUT,
+                "CLI_TIMEOUT",
+                format!(
+                    "{} 在 {} 秒内没有响应，已终止。",
+                    kernel.label(),
+                    timeout.as_secs()
+                ),
+            )
+            .with_details(
+                serde_json::json!({ "kernel": kernel.id(), "timeoutSecs": timeout.as_secs() }),
+            ));
+        }
+    };
+
+    if let Some(task) = stdin_task {
+        let _ = task.await;
+    }
+    let stderr = match stderr_task {
+        Some(task) => task.await.unwrap_or_default(),
+        None => String::new(),
+    };
+    let (status, raw, mut content, final_result) = outcome;
+
+    if !status.success() {
+        let detail = if stderr.trim().is_empty() {
+            raw.trim()
+        } else {
+            stderr.trim()
+        };
+        let detail = detail.chars().take(1200).collect::<String>();
+        return Err(ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "CLI_FAILED",
+            format!(
+                "{} 执行失败（退出码 {:?}）：{}",
+                kernel.label(),
+                status.code(),
+                if detail.is_empty() {
+                    "没有错误输出"
+                } else {
+                    &detail
+                }
+            ),
+        )
+        .with_details(serde_json::json!({ "kernel": kernel.id(), "exitCode": status.code() })));
+    }
+
+    let was_streamed = !content.trim().is_empty();
+    if content.trim().is_empty() {
+        if let Some(result) = final_result {
+            content = result;
+        } else if !raw.trim().is_empty() {
+            content = raw.clone();
+        }
+    }
+    if !was_streamed && !content.trim().is_empty() {
+        on_delta(content.trim());
+    }
+    let content = content.trim().to_string();
+    if content.is_empty() {
+        return Err(ApiError::new(
+            StatusCode::BAD_GATEWAY,
+            "CLI_EMPTY_OUTPUT",
+            format!(
+                "{} 没有返回内容。请检查 CLI 是否需要额外参数。",
+                kernel.label()
+            ),
+        )
+        .with_details(serde_json::json!({ "kernel": kernel.id() })));
+    }
+
+    Ok(CliOutcome {
+        content,
+        model: format!("{}-cli", kernel.id()),
+        latency_ms: started.elapsed().as_millis() as u64,
+        binary,
+    })
+}
+
 /// Run the selected CLI with the prompt on stdin (or substituted into `{prompt}`).
 /// `cwd` must already be the locked project/workspace directory.
 pub async fn run(
@@ -225,36 +514,7 @@ pub async fn run(
     };
     let (args, prompt_in_arg) = apply_args(&args, prompt);
 
-    let mut command = {
-        #[cfg(windows)]
-        {
-            let is_script = binary
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .map(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"))
-                .unwrap_or(false);
-            if is_script {
-                let mut cmd = Command::new("cmd");
-                cmd.arg("/C").arg(&binary);
-                cmd
-            } else {
-                Command::new(&binary)
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            Command::new(&binary)
-        }
-    };
-    command
-        .args(&args)
-        .current_dir(cwd)
-        .env("NO_COLOR", "1")
-        .env("MEDIADESK_PROJECT_DIR", cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
+    let mut command = build_command(&binary, &args, cwd);
 
     let started = Instant::now();
     let mut child = command.spawn().map_err(|err| {

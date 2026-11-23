@@ -1,7 +1,9 @@
 import type {
   Asset,
+  AssistantApplyResponse,
   AssistantChatResponse,
   AssistantHistory,
+  AssistantStreamEvent,
   BrowseInfo,
   CliConfig,
   ConfigView,
@@ -280,6 +282,88 @@ export const api = {
     request<AssistantHistory>(`/api/projects/${projectId}/chat`),
   chatAssistant: (projectId: string, payload: { message: string; mode: 'suggest' | 'apply' }) =>
     jsonRequest<AssistantChatResponse>(`/api/projects/${projectId}/chat`, 'POST', payload),
+  streamAssistant: async (
+    projectId: string,
+    payload: { message: string; mode: 'suggest' | 'apply' },
+    onEvent: (event: AssistantStreamEvent) => void,
+  ): Promise<AssistantChatResponse> => {
+    let response: Response;
+    try {
+      response = await fetch(`/api/projects/${projectId}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      throw new ApiError(
+        err instanceof Error ? `网络请求失败：${err.message}` : '网络请求失败',
+        'NETWORK',
+        0,
+      );
+    }
+    if (!response.ok) {
+      const text = await response.text();
+      let payloadData: { error?: ApiErrorPayload } | null = null;
+      try {
+        payloadData = text ? JSON.parse(text) : null;
+      } catch {
+        payloadData = null;
+      }
+      const error = payloadData?.error;
+      throw new ApiError(
+        error?.message ?? `助手请求失败（HTTP ${response.status}）`,
+        error?.code ?? 'HTTP_ERROR',
+        response.status,
+        error?.details ?? text,
+      );
+    }
+    if (!response.body) throw new ApiError('浏览器不支持流式响应', 'STREAM_UNSUPPORTED');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResponse: AssistantChatResponse | null = null;
+
+    const consume = (chunk: string) => {
+      buffer += chunk;
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() ?? '';
+      for (const block of blocks) {
+        const data = block
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n');
+        if (!data) continue;
+        let event: AssistantStreamEvent;
+        try {
+          event = JSON.parse(data) as AssistantStreamEvent;
+        } catch {
+          continue;
+        }
+        if (event.type === 'error') {
+          throw new ApiError(event.message, event.code, 502);
+        }
+        if (event.type === 'done') finalResponse = event.response;
+        onEvent(event);
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      consume(decoder.decode(value, { stream: true }));
+    }
+    consume(decoder.decode());
+    if (buffer.trim()) consume('\n\n');
+    if (!finalResponse) {
+      throw new ApiError('助手流式连接中断，请重试。', 'STREAM_ABORTED', 502);
+    }
+    return finalResponse;
+  },
+  applyAssistantSuggestion: (projectId: string, messageId: string) =>
+    jsonRequest<AssistantApplyResponse>(`/api/projects/${projectId}/chat/apply`, 'POST', {
+      messageId,
+    }),
   clearAssistantHistory: (projectId: string) =>
     jsonRequest<void>(`/api/projects/${projectId}/chat`, 'DELETE'),
 

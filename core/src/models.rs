@@ -897,6 +897,29 @@ pub struct AssistantChatResponse {
     pub messages: Vec<AssistantMessage>,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantApplyRequest {
+    pub message_id: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantApplyResponse {
+    pub applied: bool,
+    pub warnings: Vec<String>,
+    pub messages: Vec<AssistantMessage>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum AssistantStreamEvent {
+    Status { message: String },
+    Delta { text: String },
+    Done { response: AssistantChatResponse },
+    Error { code: String, message: String },
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelInfo {
