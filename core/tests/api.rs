@@ -1117,7 +1117,10 @@ async fn card_plan_generates_structured_editorial_content() {
             Some(json!({
                 "kind": "article",
                 "title": "写作结构",
-                "content": "# 写作结构\n\n读者不需要先看你如何抵达，才决定要不要继续读。先给结论，再解释理由。"
+                "content": format!(
+                    "# 写作结构\n\n{}",
+                    "读者不需要先看你如何抵达，才决定要不要继续读。先给结论，再解释理由。".repeat(20)
+                )
             })),
         )
         .await;
@@ -1151,12 +1154,18 @@ async fn card_plan_generates_structured_editorial_content() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{plan}");
-    assert_eq!(plan["plan"]["title"], "把结论放到第一屏");
-    assert_eq!(plan["plan"]["body"].as_array().unwrap().len(), 2);
-    assert_eq!(plan["plan"]["kicker"], "2026 · 11");
+    assert_eq!(plan["targetCount"], 2);
+    assert!(plan["sourceChars"].as_u64().unwrap() > 500);
+    assert_eq!(plan["cards"].as_array().unwrap().len(), 2);
+    assert_eq!(plan["cards"][0]["plan"]["title"], "把结论放到第一屏");
+    assert_eq!(
+        plan["cards"][0]["plan"]["body"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(plan["cards"][0]["plan"]["kicker"], "2026 · 11");
     assert_eq!(plan["model"], "claude-cli");
-    assert!(plan["imageUrl"].is_null());
-    assert!(plan["imageWarning"].is_null());
+    assert!(plan["cards"][0]["imageUrl"].is_null());
+    assert!(plan["cards"][0]["imageWarning"].is_null());
 }
 
 #[tokio::test]

@@ -3109,7 +3109,7 @@ body.modal-open .toast-host {
 
 .asset-card-badges {
   position: absolute;
-  top: 9px;
+  bottom: 9px;
   left: 9px;
   z-index: 2;
   display: flex;
@@ -7963,5 +7963,179 @@ input[type="range"] {
 
   .ai-card-frame {
     width: min(100%, 390px);
+  }
+}
+
+.ai-card-thumbs {
+  display: flex;
+  width: min(100%, 460px);
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+}
+
+.ai-card-thumb {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  max-width: 180px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--muted);
+  text-align: left;
+}
+
+.ai-card-thumb span {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.ai-card-thumb strong {
+  overflow: hidden;
+  font-size: 9.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-card-thumb.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ai-card-count {
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.6;
+}
+
+/* Asset selection and batch deletion */
+.asset-card {
+  position: relative;
+}
+
+.asset-card.is-selected {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-card);
+}
+
+.asset-card-tools {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.asset-select,
+.asset-delete {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--muted);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 2px 8px -4px rgba(20, 20, 20, 0.35);
+}
+
+.asset-select input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+}
+
+.asset-delete {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s var(--ease), color 0.15s var(--ease);
+}
+
+.asset-card:hover .asset-delete,
+.asset-delete:focus-visible {
+  opacity: 1;
+}
+
+.asset-delete:hover {
+  border-color: color-mix(in srgb, var(--rust) 35%, var(--line));
+  color: var(--rust);
+}
+
+.asset-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+
+.asset-batch-bar > span:first-child {
+  color: var(--ink-soft);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.asset-batch-bar .text-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 10px;
+}
+
+.asset-batch-spacer {
+  flex: 1;
+}
+
+@media (hover: none) {
+  .asset-delete {
+    opacity: 1;
+  }
+}
+
+/* Always-available project assistant entry */
+.assistant-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 62;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 13px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  color: var(--accent);
+  box-shadow: 0 10px 30px -18px rgba(30, 24, 14, 0.55);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.assistant-fab:hover {
+  background: var(--surface);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 720px) {
+  .assistant-fab {
+    right: 16px;
+    bottom: 16px;
   }
 }

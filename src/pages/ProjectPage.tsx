@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { isImeComposing } from '../lib/ime';
 import type { Asset, Kind, Project } from '../lib/types';
 import { KINDS, KIND_MAP } from '../lib/types';
 import { AssetCard } from '../components/AssetCard';
 import { AssistantPanel } from '../components/AssistantPanel';
 import { AssetEditor } from '../components/AssetEditor';
-import { CardStudio } from '../components/CardStudio';
 import { AiCardStudio } from '../components/AiCardStudio';
 import { GenerateDialog } from '../components/GenerateDialog';
 import { ProjectSettings } from '../components/ProjectSettings';
 import { Icon } from '../components/Icon';
-import { Badge, Button, EmptyState, Modal, Skeleton } from '../components/ui';
+import { Badge, Button, ConfirmDialog, EmptyState, Modal, Skeleton } from '../components/ui';
 import { navigate, useQueryParam } from '../lib/router';
 import { copyText, downloadUrl, formatFullDate, kindLabel, projectInitials, relativeTime, statusLabel, statusTone } from '../lib/format';
 
@@ -37,9 +37,11 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [generateKind, setGenerateKind] = useState<Kind>('article');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [cardOpen, setCardOpen] = useState(false);
   const [aiCardOpen, setAiCardOpen] = useState(false);
-  const [cardInitialText, setCardInitialText] = useState('');
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleteTargets, setDeleteTargets] = useState<Asset[]>([]);
+  const [deleting, setDeleting] = useState(false);
   const [vscodeLoading, setVscodeLoading] = useState(false);
   const [vscodeFallback, setVscodeFallback] = useState<VscodeFallback | null>(null);
   const [uploadKind, setUploadKind] = useState<Kind | null>(null);
@@ -112,11 +114,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
     setGenerateOpen(true);
   };
 
-  const openCardStudio = (text: string) => {
-    setCardInitialText(text);
-    setCardOpen(true);
-  };
-
   const openVscode = async () => {
     if (!project) return;
     setVscodeLoading(true);
@@ -177,9 +174,83 @@ export function ProjectPage({ projectId }: { projectId: string }) {
     }
   };
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === 'a'
+      ) {
+        event.preventDefault();
+        setAssistantOpen((value) => !value);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const counts = project?.counts;
   const activeKind = tab !== 'overview' ? KIND_MAP[tab] : null;
   const activeAssets = tab !== 'overview' ? project?.assets[tab] ?? [] : [];
+
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }, [tab, projectId]);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedIds(new Set(activeAssets.map((asset) => asset.id)));
+  };
+
+  const deleteOne = (asset: Asset) => {
+    setDeleteTargets([asset]);
+  };
+
+  const deleteSelected = () => {
+    setDeleteTargets(activeAssets.filter((asset) => selectedIds.has(asset.id)));
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTargets.length) return;
+    setDeleting(true);
+    let succeeded = 0;
+    let failed = 0;
+    for (const asset of deleteTargets) {
+      try {
+        await api.deleteAsset(projectId, asset.id);
+        succeeded += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    await refresh();
+    await Promise.all([app.refreshProjects(), app.refreshWorkspace()]);
+    setDeleting(false);
+    setDeleteTargets([]);
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      deleteTargets.forEach((asset) => next.delete(asset.id));
+      return next;
+    });
+    if (succeeded) {
+      app.toast({
+        message: failed ? `已删除 ${succeeded} 个，${failed} 个失败` : `已删除 ${succeeded} 个素材`,
+        tone: failed ? 'error' : 'success',
+      });
+    } else {
+      app.toast({ message: '删除失败，请重试', tone: 'error' });
+    }
+  };
   const totalAssets = useMemo(
     () => (counts ? Object.values(counts).reduce((a, b) => a + b, 0) : 0),
     [counts],
@@ -459,6 +530,18 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               </div>
             </div>
             <div class="kind-toolbar-actions">
+              {activeAssets.length ? (
+                <Button
+                  variant={selectionMode ? 'primary' : 'ghost'}
+                  icon="check"
+                  onClick={() => {
+                    setSelectionMode(!selectionMode);
+                    if (selectionMode) setSelectedIds(new Set());
+                  }}
+                >
+                  {selectionMode ? '退出批量' : '批量选择'}
+                </Button>
+              ) : null}
               <Button variant="ghost" icon="refresh" onClick={() => refresh()}>
                 刷新
               </Button>
@@ -468,14 +551,9 @@ export function ProjectPage({ projectId }: { projectId: string }) {
                 </Button>
               ) : null}
               {activeKind!.id === 'card' ? (
-                <>
-                  <Button variant="secondary" icon="cards" onClick={() => openCardStudio('')}>
-                    制作文卡图
-                  </Button>
-                  <Button variant="primary" icon="spark" onClick={() => setAiCardOpen(true)}>
-                    AI 文卡图
-                  </Button>
-                </>
+                <Button variant="primary" icon="spark" onClick={() => setAiCardOpen(true)}>
+                  AI 文卡图
+                </Button>
               ) : null}
               {activeKind!.upload ? (
                 <Button variant="secondary" icon="upload" loading={uploading && uploadKind === activeKind!.id} onClick={() => triggerUpload(activeKind!.id)}>
@@ -488,7 +566,37 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             </div>
           </div>
 
-          {activeAssetGrid(activeAssets, openAsset, (asset) => setLightbox(asset))}
+          {selectionMode ? (
+            <div class="asset-batch-bar">
+              <span>已选 {selectedIds.size} 个</span>
+              <button type="button" class="text-link" onClick={selectAll}>全选本页</button>
+              {selectedIds.size ? (
+                <button type="button" class="text-link" onClick={() => setSelectedIds(new Set())}>清空选择</button>
+              ) : null}
+              <span class="asset-batch-spacer" />
+              <Button
+                size="sm"
+                variant="danger"
+                icon="trash"
+                disabled={!selectedIds.size}
+                onClick={deleteSelected}
+              >
+                删除所选
+              </Button>
+            </div>
+          ) : null}
+
+          {activeAssetGrid(
+            activeAssets,
+            openAsset,
+            (asset) => setLightbox(asset),
+            {
+              selectable: selectionMode,
+              selectedIds,
+              onSelect: toggleSelected,
+              onDelete: deleteOne,
+            },
+          )}
 
           {activeKind!.upload ? (
             <div class="drop-hint">
@@ -519,7 +627,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
           }
           await app.refreshProjects();
         }}
-        onOpenCardStudio={openCardStudio}
       />
 
       <AssetEditor
@@ -535,7 +642,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             if (found) setEditorAsset(found);
           }
         }}
-        onOpenCardStudio={openCardStudio}
       />
 
       <ProjectSettings
@@ -545,21 +651,6 @@ export function ProjectPage({ projectId }: { projectId: string }) {
         onSaved={async (updated) => {
           setProject(updated);
           await app.refreshProjects();
-        }}
-      />
-
-      <CardStudio
-        project={project}
-        open={cardOpen}
-        initialText={cardInitialText}
-        onClose={() => setCardOpen(false)}
-        onSaved={async (assetId) => {
-          const data = await refresh();
-          setTab('card');
-          if (data) {
-            const found = (data.assets.card ?? []).find((asset) => asset.id === assetId);
-            if (found) openAsset(found);
-          }
         }}
       />
 
@@ -575,6 +666,22 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             if (found) openAsset(found);
           }
         }}
+      />
+
+      <ConfirmDialog
+        open={deleteTargets.length > 0}
+        title={deleteTargets.length > 1 ? `删除 ${deleteTargets.length} 个素材？` : '删除这个素材？'}
+        message={
+          deleteTargets.length > 1
+            ? `${deleteTargets.length} 个素材及其媒体文件会移入 .mediadesk/trash，可在文件系统中手动恢复。`
+            : `「${deleteTargets[0]?.title ?? ''}」会移入 .mediadesk/trash，媒体文件一并移动。`
+        }
+        confirmLabel="移入回收站"
+        loading={deleting}
+        onClose={() => {
+          if (!deleting) setDeleteTargets([]);
+        }}
+        onConfirm={confirmDelete}
       />
 
       <Modal
@@ -631,6 +738,19 @@ export function ProjectPage({ projectId }: { projectId: string }) {
       ) : null}
       </div>
 
+      {!assistantOpen ? (
+        <button
+          type="button"
+          class="assistant-fab"
+          aria-label="打开项目助手"
+          title="打开项目助手（⌘⇧A / Ctrl+Shift+A）"
+          onClick={() => setAssistantOpen(true)}
+        >
+          <Icon name="spark" size={17} />
+          <span>助手</span>
+        </button>
+      ) : null}
+
       {assistantOpen ? (
         <AssistantPanel
           project={project}
@@ -650,6 +770,12 @@ function activeAssetGrid(
   assets: Asset[],
   onOpen: (asset: Asset) => void,
   onPreview: (asset: Asset) => void,
+  selection?: {
+    selectable: boolean;
+    selectedIds: Set<string>;
+    onSelect: (id: string) => void;
+    onDelete: (asset: Asset) => void;
+  },
 ) {
   if (!assets.length) {
     return (
@@ -668,6 +794,10 @@ function activeAssetGrid(
           asset={asset}
           onOpen={() => onOpen(asset)}
           onPreview={asset.fileUrl ? () => onPreview(asset) : undefined}
+          selectable={selection?.selectable}
+          selected={selection?.selectedIds.has(asset.id)}
+          onSelect={() => selection?.onSelect(asset.id)}
+          onDelete={() => selection?.onDelete(asset)}
         />
       ))}
     </div>

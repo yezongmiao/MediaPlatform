@@ -28,7 +28,7 @@ function walk(root: string): string[] {
   return out;
 }
 
-test('creator workflow: capture → project → create → generate → VSCode → upload → card → skills → search', async ({
+test('creator workflow: capture → project → create → generate → VSCode → upload → skills → search', async ({
   page,
   request,
 }) => {
@@ -175,30 +175,7 @@ test('creator workflow: capture → project → create → generate → VSCode �
   await page.locator('.lightbox-close').click();
   await expect(page.locator('.lightbox')).not.toBeVisible();
 
-  // 8. Card studio: render and upload a PNG
-  await page.locator('.project-tab').filter({ hasText: '文卡图' }).click();
-  await page.getByRole('button', { name: '制作文卡图' }).click();
-  const studio = page.getByRole('dialog');
-  await studio.locator('.card-controls textarea').nth(0).fill('创作是把想法变成可保存的东西');
-  await studio.locator('.card-controls textarea').nth(1).fill('先写下来，再慢慢变好。');
-  await studio.locator('.card-controls input.input').fill('E2E 文卡图');
-  await studio.locator('.theme-swatch').nth(1).click();
-  await dismissToasts(page);
-  await page.screenshot({ path: path.join(SHOTS, '06-card-studio.png'), fullPage: true });
-  const canvasSize = await studio.locator('canvas').evaluate((el) => {
-    const canvas = el as HTMLCanvasElement;
-    return { width: canvas.width, height: canvas.height };
-  });
-  expect(canvasSize).toEqual({ width: 1080, height: 1440 });
-  await studio.getByRole('button', { name: '存入项目' }).click();
-  await expect(page.locator('.toast-host')).toContainText('文卡图已存入项目');
-  await expect(page.getByRole('dialog').locator('.asset-editor')).toBeVisible();
-  await page.getByRole('dialog').getByRole('button', { name: '取消' }).click();
-  await expect(page.locator('.asset-card').filter({ hasText: 'E2E 文卡图' })).toBeVisible();
-  const cardFiles = walk(path.join(projectDir(dirName), 'card')).filter((f) => f.endsWith('.png'));
-  expect(cardFiles.length).toBeGreaterThan(0);
-
-  // 9. Project settings: status + tag
+  // 8. Project settings: status + tag
   await page.getByRole('button', { name: '项目设置' }).click();
   const settings = page.getByRole('dialog');
   await settings.locator('select.select').first().selectOption('done');
@@ -233,9 +210,9 @@ test('creator workflow: capture → project → create → generate → VSCode �
   await paletteProject.click();
   await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`));
 
-  // 12. Delete the card asset and confirm trash
-  await page.locator('.project-tab').filter({ hasText: '文卡图' }).click();
-  await page.locator('.asset-card').filter({ hasText: 'E2E 文卡图' }).click();
+  // 12. Delete an article asset and confirm trash
+  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await page.locator('.asset-card').filter({ hasText: 'E2E 手动文章' }).click();
   const cardEditor = page.getByRole('dialog');
   await cardEditor.getByRole('button', { name: '删除', exact: true }).click();
   const confirm = page.getByRole('dialog').filter({ hasText: '删除这个素材？' });
@@ -246,8 +223,8 @@ test('creator workflow: capture → project → create → generate → VSCode �
   await expect(cardEditor).toBeVisible();
   await cardEditor.getByRole('button', { name: '删除', exact: true }).click();
   await confirm.getByRole('button', { name: '删除', exact: true }).click();
-  await expect(page.locator('.asset-card').filter({ hasText: 'E2E 文卡图' })).toHaveCount(0);
-  expect(walk(path.join(WORKSPACE, '.mediadesk/trash')).some((f) => f.endsWith('.png'))).toBeTruthy();
+  await expect(page.locator('.asset-card').filter({ hasText: 'E2E 手动文章' })).toHaveCount(0);
+  expect(walk(path.join(WORKSPACE, '.mediadesk/trash')).some((f) => f.endsWith('.md'))).toBeTruthy();
 
   // 13. Theme persists after reload
   await page.goto('/settings');
@@ -390,7 +367,10 @@ test('CLI text kernel and project assistant edits', async ({ page, request }) =>
   await page.keyboard.press('Escape');
   await expect(generate).not.toBeVisible();
 
-  await page.getByRole('button', { name: '助手', exact: true }).click();
+  await page.locator('.project-tab').filter({ hasText: '脚本' }).click();
+  const assistantFab = page.getByRole('button', { name: '打开项目助手' });
+  await expect(assistantFab).toBeVisible();
+  await assistantFab.click();
   const assistant = page.locator('.assistant-sidebar');
   await expect(assistant).toBeVisible();
   await expect(page.locator('.project-content')).toBeVisible();
@@ -456,6 +436,49 @@ test('assistant creates new card assets in an empty directory', async ({ page, r
   await assistant.getByRole('button', { name: '关闭助手' }).click();
 });
 
+test('asset management deletes one item and a batch', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E 批量删除项目', brief: '验证单个和批量删除。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  for (const title of ['待删除 A', '待删除 B', '待删除 C']) {
+    const asset = await request.post(`/api/projects/${project.id}/assets`, {
+      data: { kind: 'article', title, content: `# ${title}\n\n这是用于删除测试的正文。` },
+    });
+    expect(asset.ok()).toBeTruthy();
+  }
+
+  await page.goto(`/projects/${project.id}`);
+  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await expect(page.locator('.asset-card')).toHaveCount(3);
+
+  const firstCard = page.locator('.asset-card').filter({ hasText: '待删除 A' });
+  await firstCard.hover();
+  await firstCard.getByRole('button', { name: /删除素材/ }).click();
+  const singleDialog = page.getByRole('dialog');
+  await expect(singleDialog).toContainText('删除这个素材');
+  await singleDialog.getByRole('button', { name: '移入回收站' }).click();
+  await expect(page.locator('.toast-host')).toContainText('已删除 1 个素材');
+  await expect(page.locator('.asset-card')).toHaveCount(2);
+
+  await page.getByRole('button', { name: '批量选择' }).click();
+  const checkboxes = page.locator('.asset-card .asset-select input');
+  await expect(checkboxes).toHaveCount(2);
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await page.screenshot({ path: path.join(SHOTS, '17-asset-batch-delete.png') });
+  await page.getByRole('button', { name: '删除所选' }).click();
+  const batchDialog = page.getByRole('dialog');
+  await expect(batchDialog).toContainText('删除 2 个素材');
+  await batchDialog.getByRole('button', { name: '移入回收站' }).click();
+  await expect(page.locator('.toast-host')).toContainText('已删除 2 个素材');
+  await expect(page.locator('.asset-card')).toHaveCount(0);
+
+  const after = await (await request.get(`/api/projects/${project.id}`)).json();
+  expect(after.assets.article).toHaveLength(0);
+});
+
 test('AI card studio generates an editorial PNG and saves it', async ({ page, request }) => {
   const created = await request.post('/api/projects', {
     data: { title: 'E2E AI 文卡图', brief: '把文章提炼成一张编辑式卡片。' },
@@ -467,7 +490,8 @@ test('AI card studio generates an editorial PNG and saves it', async ({ page, re
       kind: 'article',
       title: '把结论放到第一屏',
       content:
-        '# 写作结构\n\n读者不需要先看你如何抵达，才决定要不要继续读。\n\n先给出判断，再解释理由；卡片只保留一句值得记住的话。',
+        '# 写作结构\n\n' +
+        '读者不需要先看你如何抵达，才决定要不要继续读。先给出判断，再解释理由；卡片只保留一句值得记住的话。\n\n'.repeat(40),
     },
   });
   expect(article.ok()).toBeTruthy();
@@ -510,16 +534,17 @@ test('AI card studio generates an editorial PNG and saves it', async ({ page, re
   await studio.getByRole('button', { name: '生成文卡图' }).click();
   await expect(studio.getByRole('button', { name: '重新生成' })).toBeVisible({ timeout: 15_000 });
   await expect(studio).toContainText('已带入 AI 配图', { timeout: 15_000 });
+  await expect(studio).toContainText('实际生成 3 张');
   await expect(studio.locator('.ai-card-canvas')).toHaveAttribute('width', '1080');
+  await expect(studio.locator('.ai-card-thumb')).toHaveCount(3);
   await page.screenshot({ path: path.join(SHOTS, '16-ai-card.png') });
-  await studio.getByRole('button', { name: '存入项目' }).click();
-  await expect(page.locator('.toast-host')).toContainText('文卡图 PNG 已存入项目');
+  await studio.getByRole('button', { name: '保存全部 3 张' }).click();
+  await expect(page.locator('.toast-host')).toContainText('已存入 3 张文卡图 PNG', { timeout: 15_000 });
 
   const after = await (await request.get(`/api/projects/${project.id}`)).json();
-  expect(after.assets.card).toHaveLength(1);
-  expect(after.assets.card[0].fileUrl).toBeTruthy();
-  expect(after.assets.card[0].title).toBe('把结论放到第一屏');
-  expect(after.assets.illustration).toHaveLength(1);
+  expect(after.assets.card).toHaveLength(3);
+  expect(after.assets.card.every((asset: { fileUrl?: string }) => Boolean(asset.fileUrl))).toBeTruthy();
+  expect(after.assets.illustration).toHaveLength(3);
 });
 
 test('media generation saves an illustration into the project', async ({ page, request }) => {

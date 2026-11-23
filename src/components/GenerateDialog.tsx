@@ -23,14 +23,12 @@ export function GenerateDialog({
   initialKind,
   onClose,
   onSaved,
-  onOpenCardStudio,
 }: {
   project: Project;
   open: boolean;
   initialKind?: Kind;
   onClose: () => void;
   onSaved: (assetId: string) => void | Promise<void>;
-  onOpenCardStudio: (text: string) => void;
 }) {
   const app = useApp();
   const [kind, setKind] = useState<Kind>('article');
@@ -258,18 +256,6 @@ export function GenerateDialog({
                 </>
               ) : (
                 <>
-                  {kind === 'card' ? (
-                    <Button
-                      variant="secondary"
-                      icon="cards"
-                      onClick={() => {
-                        onOpenCardStudio(result.content);
-                        onClose();
-                      }}
-                    >
-                      去排版
-                    </Button>
-                  ) : null}
                   <Button variant="primary" icon="check" loading={saving} onClick={save}>
                     保存为素材
                   </Button>

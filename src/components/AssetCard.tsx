@@ -8,19 +8,36 @@ export function AssetCard({
   asset,
   onOpen,
   onPreview,
+  selected = false,
+  selectable = false,
+  onSelect,
+  onDelete,
 }: {
   asset: Asset;
   onOpen: () => void;
   onPreview?: () => void;
+  selected?: boolean;
+  selectable?: boolean;
+  onSelect?: () => void;
+  onDelete?: () => void;
 }) {
   const kind = KIND_MAP[asset.kind];
   const image = asset.fileUrl && (asset.kind === 'illustration' || asset.kind === 'card');
   const video = asset.kind === 'video';
 
   return (
-    <article class={`asset-card asset-card-${asset.kind}`} onClick={onOpen} tabIndex={0} onKeyDown={(e) => {
-      if (e.key === 'Enter' || e.key === ' ') onOpen();
-    }}>
+    <article
+      class={`asset-card asset-card-${asset.kind} ${selected ? 'is-selected' : ''}`}
+      onClick={onOpen}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <div class="asset-card-visual" style={{ '--asset-accent': kind.accent } as Record<string, string>}>
         {image ? (
           <>
@@ -53,6 +70,35 @@ export function AssetCard({
             <span class="asset-paper-mark">{asset.title.slice(0, 1)}</span>
           </div>
         )}
+        <div class="asset-card-tools">
+          {selectable ? (
+            <label class="asset-select" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={selected}
+                aria-label={`选择素材：${asset.title}`}
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onSelect?.();
+                }}
+              />
+            </label>
+          ) : null}
+          {onDelete ? (
+            <button
+              type="button"
+              class="asset-delete"
+              aria-label={`删除素材：${asset.title}`}
+              title="删除素材"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+            >
+              <Icon name="trash" size={14} />
+            </button>
+          ) : null}
+        </div>
         <div class="asset-card-badges">
           <Badge tone={ASSET_STATUS[asset.status]?.color ?? 'neutral'}>
             {ASSET_STATUS[asset.status]?.label ?? asset.status}

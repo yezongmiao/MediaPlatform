@@ -330,7 +330,7 @@ export function AssistantPanel({
                             );
                           })}
                           {message.newAssets.some((create) => create.kind === 'card') ? (
-                            <p class="assistant-create-note">文卡图以文案素材保存；PNG 可在文卡图 Studio 导出。</p>
+                            <p class="assistant-create-note">文卡图以文案素材保存；PNG 可用「AI 文卡图」生成。</p>
                           ) : null}
                         </div>
                       ) : null}

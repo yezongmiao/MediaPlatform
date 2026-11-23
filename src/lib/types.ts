@@ -51,7 +51,7 @@ export const KINDS: KindMeta[] = [
     dir: 'card',
     description: '可保存的短句卡片',
     accent: 'var(--kind-card)',
-    action: '制作文卡图',
+    action: 'AI 文卡图',
     upload: true,
     accept: 'image/png,image/jpeg,image/webp,image/gif,image/avif',
   },
@@ -426,13 +426,20 @@ export interface CardPlan {
   imagePrompt?: string;
 }
 
-export interface CardPlanResponse {
+export interface GeneratedCard {
   plan: CardPlan;
   imageUrl?: string;
   imageAssetId?: string;
   imageWarning?: string;
+}
+
+export interface CardPlanResponse {
+  cards: GeneratedCard[];
   model: string;
   latencyMs: number;
+  sourceChars: number;
+  targetCount: number;
+  warning?: string;
 }
 
 export type AssistantStreamEvent =

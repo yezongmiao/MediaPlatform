@@ -24,7 +24,6 @@ export function AssetEditor({
   open,
   onClose,
   onSaved,
-  onOpenCardStudio,
 }: {
   project: Project;
   asset: Asset | null;
@@ -32,7 +31,6 @@ export function AssetEditor({
   open: boolean;
   onClose: () => void;
   onSaved: (assetId?: string) => void | Promise<void>;
-  onOpenCardStudio?: (text: string) => void;
 }) {
   const app = useApp();
   const [current, setCurrent] = useState<Asset | null>(asset);
@@ -264,18 +262,8 @@ export function AssetEditor({
             ) : kind === 'card' && current ? (
               <div class="asset-media-placeholder card-placeholder">
                 <Icon name="cards" size={28} />
-                <h3>还没有画面</h3>
-                <p>用文卡图 Studio 把这段文案排成一张可以发布的图片。</p>
-                <Button
-                  variant="primary"
-                  icon="wand"
-                  onClick={() => {
-                    onOpenCardStudio?.(content || current.title);
-                    onClose();
-                  }}
-                >
-                  去排版
-                </Button>
+                <h3>这是文卡文案</h3>
+                <p>需要 PNG 时，请回到「文卡图」页使用「AI 文卡图」从文章生成成品卡片。</p>
               </div>
             ) : kind === 'illustration' && current ? (
               <div class="asset-media-placeholder">

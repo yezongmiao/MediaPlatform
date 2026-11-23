@@ -15,9 +15,11 @@
 - **媒体模型直连**：插图走 OpenAI Images 兼容接口，视频支持 OpenAI / 通用 task / Seedance 任务协议，成功后直接落进项目素材库。
 - **项目助手右侧栏**：流式接收回复，边生成边阅读；不仅能改已有素材，还能在空目录里新建文章、脚本与文卡图文案；建议式给出「采纳并写入」按钮，确认后才写入。
 - **VSCode 协作**：一键生成 `AGENTS.md`、`CLAUDE.md`、技能/预设副本、`.vscode/` 与机器可读上下文，并调用 `code` 打开项目。
-- **文卡图 Studio**：内置 5 套主题与 3 种画幅，Canvas 导出 1080px PNG 并直接入库。
+- **AI 文卡图**：从文章按篇幅生成多张 1080×1440 编辑式 PNG（约每 500 字 1 张，最多 6 张），可选 AI 配图与纸张主题。
 - **AI 文卡图**：从文章提炼标题、短正文、注脚和配图提示，生成 1080×1440 编辑式 PNG；可选 AI 配图。
 - **输入法友好**：中文/日文/韩文组合输入期间不触发 Enter 快捷键，也不会被受控输入框的刷新打断。
+- **批量管理**：文章、脚本、插图、文卡与视频均可勾选批量删除；每张卡片悬停也有独立删除按钮，统一进回收站。
+- **助手随时唤起**：项目所有页面右下角悬浮「助手」入口，快捷键 `⌘⇧A` / `Ctrl+Shift+A`。
 - **本地优先**：无账号、无遥测、无外部字体/CDN；API Key 只存在本机 `.mediadesk/config.json`（Unix 下权限 0600）。
 
 ## 界面
@@ -26,9 +28,13 @@
 |---|---|
 | ![灵感](docs/screenshots/ideas.png) | ![项目](docs/screenshots/project.png) |
 
-| 生成素材 | 文卡图 Studio |
+| 生成素材 | AI 文卡图 |
 |---|---|
-| ![生成](docs/screenshots/generate.png) | ![文卡图](docs/screenshots/card-studio.png) |
+| ![生成](docs/screenshots/generate.png) | ![AI 文卡图](docs/screenshots/ai-card.png) |
+
+| 批量选择与删除 |
+|---|
+| ![批量删除](docs/screenshots/batch-delete.png) |
 
 | 深色模式 | 技能库 |
 |---|---|
@@ -46,9 +52,6 @@
 |---|---|
 | ![建议式采纳](docs/screenshots/assistant-suggest.png) | ![空目录新建](docs/screenshots/assistant-create.png) |
 
-| AI 文卡图 |
-|---|
-| ![AI 文卡图](docs/screenshots/ai-card.png) |
 
 桌面原生窗口（Tauri 2 + 系统 WKWebView，安装包 3.63MB）：
 
@@ -98,8 +101,8 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `release/媒材工坊_0.5.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.63 MB |
-| `release/媒材工坊_0.5.0_aarch64.app.zip` | 免安装应用 | 3.18 MB |
+| `release/媒材工坊_0.6.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.63 MB |
+| `release/媒材工坊_0.6.0_aarch64.app.zip` | 免安装应用 | 3.19 MB |
 | `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.37 MB |
 
 实测：浏览器服务空载 RSS ≈ 8.6MB，冷启动 0.1–0.6s；原生主进程空载约 35MB、打开工作台约 95MB（系统 WKWebView，进程另计）。完整数据见 [验收记录](docs/ACCEPTANCE.md)。
@@ -112,10 +115,11 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
    - 文章 / 脚本：Markdown 编辑器 + 预览；
    - 插图 / 文卡图 / 视频：上传媒体，自动生成同名 `.md` sidecar，记录标题、状态、提示词与备注；
    - 外部放入项目目录的图片/视频，点「刷新文件」会自动收编为素材；
-   - 删除进 `.mediadesk/trash/`，可手动恢复。
+   - 每张素材有独立删除按钮；「批量选择」后可全选本页、删除所选；
+   - 删除统一进 `.mediadesk/trash/`，可手动恢复。
 4. **生成文本素材**：项目页「生成素材」→ 选文章/脚本/文卡图、预设、技能、写要求 → 可先「预览/复制提示词」而不调用模型 → 结果确认标题后「保存为素材」。提示词快照自动写入 `prompts/`。文本走当前选择的文本内核（API 或本机 CLI）。
 5. **生成插图和视频**：选插图/视频 → 写画面要求 → 「生成并保存」。媒体模型成功后，文件直接写入 `illustration/` 或 `video/`，sidecar 记录提示词与模型，不需要额外上传。
-6. **AI 文卡图**：项目 →「文卡图」→「AI 文卡图」→ 选文章/脚本、写额外要求 → 文本模型提炼方案，可选图像模型生成配图 → 直接存入项目为 PNG。
+6. **AI 文卡图**：项目 →「文卡图」→「AI 文卡图」→ 选文章/脚本、写额外要求 → 文本模型按篇幅拆成多张方案，可选逐张配图 → 切换缩略图预览，保存全部为 PNG。
 7. **和项目助手对话**：项目页「助手」→ 右侧栏打开，项目素材仍在左侧可浏览、可打开 → 选择建议式/覆盖式 → 发送。助手读取项目简介、关联灵感与全部素材，回复通过 SSE 流式显示；**建议式**只展示修改/新建建议，点「采纳并写入」并确认后才写入；**覆盖式**直接修改已有素材并创建新素材。
 8. **VSCode**：项目页「在 VSCode 打开」。若系统没有 `code` 命令，会明确提示并给出可复制的手动命令，同时上下文文件已经生成。
 9. **沉淀方法**：「技能与预设」里编辑方法论与各类素材的写作规范；项目设置可勾选要随项目复制的技能/预设。
@@ -190,10 +194,11 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 项目 →「文卡图」→「AI 文卡图」：
 
 - 从项目内文章或脚本提取内容，也可以不指定、使用项目简介；
-- 当前文本内核先输出结构化方案：`kicker` / `page` / `title` / `body` / `footnote` / `source` / `imagePrompt`；
-- 勾选「生成 AI 配图」时，`imagePrompt` 会交给「媒体生成 → 图像模型」，生成一张无文字编辑插画并作为插图素材保存；
-- 前端 Canvas 按 1080×1440 排版：大字标记、细红线、标题、可选大图、正文、注脚与来源；主题可选；
-- 「存入项目」把合成后的 PNG 作为 `card` 素材写入项目；「下载 PNG」直接导出；
+- **按文章长度决定卡片数量**：约每 500 字 1 张，最少 1 张、最多 6 张；模型被要求从不同段落/观点拆卡，避免同义重复；
+- 当前文本内核输出结构化方案：`kicker` / `page` / `title` / `body` / `footnote` / `source` / `imagePrompt`；
+- 勾选「生成 AI 配图」时，每张卡片的 `imagePrompt` 会逐张交给图像模型，生成无文字编辑插画并作为插图素材保存；
+- 前端 Canvas 按 1080×1440 排版：大字标记、细红线、标题、可选大图、正文、注脚与来源；缩略图切换多张；
+- 「保存全部」把每张合成 PNG 作为 `card` 素材写入项目；「下载当前」导出当前张；
 - 图像模型未配置或生成失败时，不阻塞方案，自动退回纯文字版并给出警告；
 - 大模型只负责提取与排版建议，标题、正文、来源仍建议在导出前人工核对。
 
@@ -201,14 +206,14 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 ## 项目助手
 
-- 入口在项目页「助手」，以**右侧栏**停靠：桌面端与项目内容并排，素材可继续浏览和打开；窄屏切换为侧滑抽屉。会话历史保存到 `projects/<项目>/.mediadesk/assistant/history.json`（隐藏目录，不会被文件接口暴露）。
+- 入口在项目页「助手」，以**右侧栏**停靠：桌面端与项目内容并排，素材可继续浏览和打开；窄屏切换为侧滑抽屉。项目任意 Tab 都可以通过右下角悬浮入口或 `⌘⇧A` / `Ctrl+Shift+A` 唤起。会话历史保存到 `projects/<项目>/.mediadesk/assistant/history.json`（隐藏目录，不会被文件接口暴露）。
 - 助手读取项目、关联灵感和全部素材，通过当前文本内核回复；回复通过 SSE 实时显示，界面会展示当前阶段、已接收文本与等待秒数。
 - **流式 CLI**：Claude Code 使用 stream-json 增量；其他 CLI 直接转发 stdout 增量。自定义参数会优先于默认流式参数。
 - **流式 API**：OpenAI Chat、Anthropic Messages、OpenAI Responses 均解析 SSE；非 SSE 网关自动回退。
 - **能改也能建**：已有素材走 `edits`；当某类目录为空或用户明确要求新增时，助手用 `newAssets` 新建 `article` / `script` / `card`，不需要编造 assetId。一次最多 8 条，支持批量创建。
 - **建议式**：只展示修改/新建建议，不改文件；每条建议下方有「采纳并写入」按钮，确认后由服务端应用并标记 `applied`，刷新/重启后按钮不会重复出现。
 - **覆盖式**：把 `edits` 里的完整 `content` / `title` 写入已有素材，同时创建 `newAssets` 中的新素材；服务端只接受项目内真实 assetId 作为修改目标。
-- **文卡图新建**：card 目录为空时可以直接生成多条文案素材（`.md` sidecar）。实际 1080px PNG 仍由用户在「文卡图 Studio」导出，助手不会假装已经生成图片。
+- **文卡图新建**：card 目录为空时可以直接生成多条文案素材（`.md` sidecar）。实际 1080px PNG 请用「AI 文卡图」生成；助手不会假装已经导出图片。
 - 模型必须输出约定 JSON；无法解析时退化为普通对话，不会误改素材。
 
 ## 工作区结构
@@ -247,7 +252,7 @@ npm run e2e            # Playwright：真实 Rust 服务 + mock LLM/媒体 + moc
 cargo clippy -p mediadesk-core -p mediadesk-server --all-targets -- -D warnings
 ```
 
-E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 文卡图导出 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；输入法组合输入不误触 Enter；切换工作区；CLI 文本内核 → 项目助手流式建议 → 「采纳并写入」覆盖素材；空 card 目录批量新建；AI 文卡图生成并保存 PNG；媒体生成并落盘；服务商折叠、模型列表获取与搜索。
+E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；输入法组合输入不误触 Enter；切换工作区；CLI 文本内核 → 项目助手流式建议 → 「采纳并写入」覆盖素材；空 card 目录批量新建；文章单项删除与批量删除；AI 文卡图按文章长度生成 3 张并保存全部；媒体生成并落盘；服务商折叠、模型列表获取与搜索。
 
 Playwright 默认直接驱动系统 Microsoft Edge，不额外下载 Chromium；CI 无 Edge 时可用 `CHROMIUM_PATH` 指定托管浏览器，或设置 `PW_BROWSER=chromium`。
 
@@ -261,7 +266,7 @@ Playwright 默认直接驱动系统 Microsoft Edge，不额外下载 Chromium；
 - 媒体接口的兼容范围是 OpenAI Images、OpenAI Videos、通用 task 与 Seedance；不同厂商的额外字段/签名方式可能需要通过创建路径和风格适配。
 - 当前 macOS 构建为 Apple Silicon（arm64）；未提供 Intel / universal 包。
 - 普通素材生成仍为非流式，长文生成时界面显示等待态；项目助手已使用流式。
-- 助手新建文卡图保存的是文案/`.md` sidecar，不会在服务端渲染 PNG；需要图片时请在文卡图 Studio 导出，或使用媒体模型生成插图。
+- 助手新建文卡图保存的是文案/`.md` sidecar，不会在服务端渲染 PNG；需要图片时请用「AI 文卡图」生成。
 - 单用户本地应用，无多端同步与协作。
 - Windows 未在本机实机运行；CI 构建配置已提供。
 - 不包含代码签名与公证；对外分发时需配置 Apple Developer / Windows 证书。

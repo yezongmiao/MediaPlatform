@@ -807,7 +807,7 @@ pub struct CardPlanRequest {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CardPlanResponse {
+pub struct GeneratedCard {
     pub plan: CardPlan,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_url: Option<String>,
@@ -815,8 +815,18 @@ pub struct CardPlanResponse {
     pub image_asset_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image_warning: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardPlanResponse {
+    pub cards: Vec<GeneratedCard>,
     pub model: String,
     pub latency_ms: u64,
+    pub source_chars: usize,
+    pub target_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

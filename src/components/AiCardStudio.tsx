@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
-import type { CardPlan, Project } from '../lib/types';
+import type { GeneratedCard, Project } from '../lib/types';
 import { Button, Field, InlineError, Modal } from './ui';
 import { Icon } from './Icon';
 import { CARD_THEMES } from '../lib/card-renderer';
@@ -38,22 +38,31 @@ export function AiCardStudio({
 }) {
   const app = useApp();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageCache = useRef(new Map<string, HTMLImageElement>());
   const [sources, setSources] = useState<Array<{ id: string; title: string }>>([]);
   const [sourceId, setSourceId] = useState('');
   const [instruction, setInstruction] = useState('');
   const [withImage, setWithImage] = useState(true);
   const [themeId, setThemeId] = useState(CARD_THEMES[0].id);
-  const [plan, setPlan] = useState<CardPlan | null>(null);
-  const [imageUrl, setImageUrl] = useState('');
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
-  const [imageWarning, setImageWarning] = useState('');
+  const [cards, setCards] = useState<GeneratedCard[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [activeImage, setActiveImage] = useState<HTMLImageElement | null>(null);
   const [imageLoadError, setImageLoadError] = useState('');
-  const [meta, setMeta] = useState<{ model: string; latencyMs: number } | null>(null);
+  const [meta, setMeta] = useState<{
+    model: string;
+    latencyMs: number;
+    sourceChars: number;
+    targetCount: number;
+    warning?: string;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveProgress, setSaveProgress] = useState('');
   const [error, setError] = useState('');
 
   const theme = CARD_THEMES.find((item) => item.id === themeId) ?? CARD_THEMES[0];
+  const activeCard = cards[activeIndex] ?? null;
+  const activePlan = activeCard?.plan ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -67,55 +76,70 @@ export function AiCardStudio({
   }, [open, project.assets.article, project.assets.script]);
 
   useEffect(() => {
-    if (!imageUrl) {
-      setImage(null);
+    if (!activeCard?.imageUrl) {
+      setActiveImage(null);
       setImageLoadError('');
       return;
     }
     let cancelled = false;
-    loadImage(imageUrl)
+    const cached = imageCache.current.get(activeCard.imageUrl);
+    if (cached) {
+      setActiveImage(cached);
+      setImageLoadError('');
+      return;
+    }
+    loadImage(activeCard.imageUrl)
       .then((loaded) => {
+        imageCache.current.set(activeCard.imageUrl!, loaded);
         if (!cancelled) {
-          setImage(loaded);
+          setActiveImage(loaded);
           setImageLoadError('');
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setImage(null);
+          setActiveImage(null);
           setImageLoadError('配图加载失败，已退回纯文字版。');
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [imageUrl]);
+  }, [activeCard?.imageUrl, activeCard]);
 
   useLayoutEffect(() => {
-    if (!open || !plan || !canvasRef.current) return;
-    drawEditorialCard(canvasRef.current, { plan, theme, image });
-  }, [open, plan, theme, image]);
+    if (!open || !activePlan || !canvasRef.current) return;
+    drawEditorialCard(canvasRef.current, { plan: activePlan, theme, image: activeImage });
+  }, [open, activePlan, activeIndex, theme, activeImage]);
 
   const generate = async () => {
     setLoading(true);
     setError('');
-    setPlan(null);
-    setImageUrl('');
-    setImage(null);
-    setImageWarning('');
+    setCards([]);
+    setActiveIndex(0);
+    setActiveImage(null);
     setImageLoadError('');
     setMeta(null);
+    setSaveProgress('');
     try {
       const result = await api.generateCardPlan(project.id, {
         sourceAssetId: sourceId || undefined,
         instruction,
         withImage,
       });
-      setPlan(result.plan);
-      setImageUrl(result.imageUrl ?? '');
-      setImageWarning(result.imageWarning ?? '');
-      setMeta({ model: result.model, latencyMs: result.latencyMs });
-      app.toast({ message: '文卡图方案已生成', tone: 'success' });
+      setCards(result.cards);
+      setActiveIndex(0);
+      setMeta({
+        model: result.model,
+        latencyMs: result.latencyMs,
+        sourceChars: result.sourceChars,
+        targetCount: result.targetCount,
+        warning: result.warning,
+      });
+      app.toast({
+        message: `已生成 ${result.cards.length} 张文卡图方案（文章约 ${result.sourceChars} 字）`,
+        tone: 'success',
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '生成文卡图失败');
     } finally {
@@ -123,34 +147,59 @@ export function AiCardStudio({
     }
   };
 
+  const renderCardBlob = async (card: GeneratedCard): Promise<Blob> => {
+    let image: HTMLImageElement | null = null;
+    if (card.imageUrl) {
+      image = imageCache.current.get(card.imageUrl) ?? null;
+      if (!image) {
+        try {
+          image = await loadImage(card.imageUrl);
+          imageCache.current.set(card.imageUrl, image);
+        } catch {
+          image = null;
+        }
+      }
+    }
+    const canvas = document.createElement('canvas');
+    drawEditorialCard(canvas, { plan: card.plan, theme, image });
+    return canvasToBlob(canvas);
+  };
+
   const download = async () => {
-    if (!plan || !canvasRef.current) return;
+    if (!activePlan || !canvasRef.current) return;
     const blob = await canvasToBlob(canvasRef.current);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${plan.title.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40) || '文卡图'}.png`;
+    link.download = `${activePlan.title.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40) || '文卡图'}.png`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   const save = async () => {
-    if (!plan || !canvasRef.current) return;
+    if (!cards.length) return;
     setSaving(true);
     setError('');
+    const savedIds: string[] = [];
     try {
-      const blob = await canvasToBlob(canvasRef.current);
-      const safeTitle = plan.title.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40) || '文卡图';
-      const file = new File([blob], `${safeTitle}.png`, { type: 'image/png' });
-      const asset = await api.uploadAsset(project.id, 'card', file, { title: plan.title });
+      for (let index = 0; index < cards.length; index += 1) {
+        setSaveProgress(`${index + 1} / ${cards.length}`);
+        const card = cards[index];
+        const blob = await renderCardBlob(card);
+        const safeTitle = card.plan.title.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40) || `文卡图-${index + 1}`;
+        const file = new File([blob], `${safeTitle}.png`, { type: 'image/png' });
+        const asset = await api.uploadAsset(project.id, 'card', file, { title: card.plan.title });
+        savedIds.push(asset.id);
+      }
       await Promise.all([app.refreshProjects(), app.refreshWorkspace()]);
-      app.toast({ message: '文卡图 PNG 已存入项目', tone: 'success' });
-      onSaved(asset.id);
+      app.toast({ message: `已存入 ${cards.length} 张文卡图 PNG`, tone: 'success' });
+      if (savedIds[0]) onSaved(savedIds[0]);
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '保存文卡图失败');
     } finally {
       setSaving(false);
+      setSaveProgress('');
     }
   };
 
@@ -159,18 +208,20 @@ export function AiCardStudio({
       open={open}
       onClose={onClose}
       title="AI 文卡图"
-      subtitle="从文章生成一张 1080×1440 的编辑式 PNG；可选 AI 配图。"
+      subtitle="根据文章长度生成多张 1080×1440 编辑式 PNG；可选 AI 配图。"
       size="full"
       class="ai-card-modal"
       footer={
         <>
-          <span class="shortcut-hint">文本企划 + 可选媒体配图 · 输出 1080×1440 PNG</span>
+          <span class="shortcut-hint">
+            {cards.length ? `${cards.length} 张 · 已按文章长度 ${meta?.sourceChars ?? 0} 字生成` : '文本企划 + 可选媒体配图 · 1080×1440 PNG'}
+          </span>
           <div class="modal-actions">
-            <Button variant="secondary" icon="download" disabled={!plan || saving} onClick={download}>
-              下载 PNG
+            <Button variant="secondary" icon="download" disabled={!activePlan || saving} onClick={download}>
+              下载当前
             </Button>
-            <Button variant="primary" icon="image" loading={saving} disabled={!plan} onClick={save}>
-              存入项目
+            <Button variant="primary" icon="image" loading={saving} disabled={!cards.length} onClick={save}>
+              {saving ? `保存中 ${saveProgress}` : cards.length > 1 ? `保存全部 ${cards.length} 张` : '存入项目'}
             </Button>
           </div>
         </>
@@ -178,31 +229,56 @@ export function AiCardStudio({
     >
       <div class="ai-card-layout">
         <div class="ai-card-stage">
-          <div class={`ai-card-frame ${plan ? '' : 'is-empty'}`}>
+          <div class={`ai-card-frame ${activePlan ? '' : 'is-empty'}`}>
             <canvas ref={canvasRef} class="ai-card-canvas" aria-label="AI 文卡图预览" />
-            {!plan && !loading ? (
+            {!activePlan && !loading ? (
               <div class="ai-card-placeholder">
                 <Icon name="cards" size={34} />
-                <h3>把一篇文章变成一张可保存的卡片</h3>
-                <p>选一篇文章，写一句额外要求；大模型会提炼标题、正文、注脚与配图提示词。</p>
+                <h3>把一篇文章变成一组可保存的卡片</h3>
+                <p>文章越长，生成的卡片越多；大模型会拆出不同观点，分别排版标题、正文、注脚与配图。</p>
               </div>
             ) : null}
             {loading ? (
               <div class="ai-card-loading">
                 <span class="spinner" />
-                <strong>正在提炼文章并排版…</strong>
-                <small>{withImage ? '文本方案完成后会尝试生成配图，可能需要更久。' : '只生成文本方案，不调用图像模型。'}</small>
+                <strong>正在拆解文章并排版…</strong>
+                <small>{withImage ? '会为每张卡片逐张生成配图，可能需要较久。' : '只生成文本方案，不调用图像模型。'}</small>
               </div>
             ) : null}
           </div>
+          {cards.length > 1 ? (
+            <div class="ai-card-thumbs" aria-label="文卡图列表">
+              {cards.map((card, index) => (
+                <button
+                  key={`${card.plan.title}-${index}`}
+                  class={`ai-card-thumb ${index === activeIndex ? 'is-active' : ''}`}
+                  onClick={() => setActiveIndex(index)}
+                  aria-label={`查看第 ${index + 1} 张：${card.plan.title}`}
+                >
+                  <span>{String(index + 1).padStart(2, '0')}</span>
+                  <strong>{card.plan.title}</strong>
+                </button>
+              ))}
+            </div>
+          ) : null}
           <div class="ai-card-stage-foot">
-            <span>{plan ? `模型：${meta?.model ?? '—'} · ${meta?.latencyMs ?? 0}ms` : '1080 × 1440 · 3:4'}</span>
-            {image ? <span><Icon name="image" size={12} /> 已带入 AI 配图</span> : <span>纯文字排版</span>}
+            <span>
+              {activePlan
+                ? `第 ${activeIndex + 1} / ${cards.length} 张 · 模型 ${meta?.model ?? '—'} · ${meta?.latencyMs ?? 0}ms`
+                : '1080 × 1440 · 3:4'}
+            </span>
+            <span>
+              {activeImage ? (
+                <><Icon name="image" size={12} /> 已带入 AI 配图</>
+              ) : (
+                '纯文字排版'
+              )}
+            </span>
           </div>
         </div>
 
         <aside class="ai-card-controls">
-          <Field label="取材文章" hint={sources.length ? '从项目文章或脚本中提取' : '项目还没有文章，将使用项目简介'}>
+          <Field label="取材文章" hint={sources.length ? '文章越长，生成的卡片越多（每约 500 字 1 张，最多 6 张）' : '项目还没有文章，将使用项目简介'}>
             <select class="select" value={sourceId} onChange={(e) => setSourceId((e.target as HTMLSelectElement).value)}>
               <option value="">不指定（使用项目简介）</option>
               {sources.map((source) => (
@@ -227,7 +303,7 @@ export function AiCardStudio({
             />
             <span>
               <strong>生成 AI 配图</strong>
-              <small>需要先在「设置 → 媒体生成」配置图像模型；失败时自动退回纯文字版。</small>
+              <small>会为每张卡片逐张调用图像模型；未配置或失败时自动退回纯文字版。</small>
             </span>
           </label>
 
@@ -251,16 +327,27 @@ export function AiCardStudio({
           </div>
 
           <Button variant="primary" icon="spark" loading={loading} onClick={generate}>
-            {plan ? '重新生成' : '生成文卡图'}
+            {cards.length ? '重新生成' : '生成文卡图'}
           </Button>
+          {meta ? (
+            <p class="ai-card-count">
+              文章约 {meta.sourceChars} 字 → 建议 {meta.targetCount} 张，实际生成 {cards.length} 张。
+            </p>
+          ) : null}
           <p class="settings-note">
-            助手会严格按原文事实提炼；标题、正文与来源仍建议在导出前自行核对。配图会作为一张插图素材保存到项目。
+            正文与来源由文本模型按原文提炼，请在导出前核对。配图会作为独立插图素材保存到项目。
           </p>
 
-          {imageWarning ? (
+          {meta?.warning ? (
             <div class="ai-card-warning">
               <Icon name="alert" size={14} />
-              <span>{imageWarning}</span>
+              <span>{meta.warning}</span>
+            </div>
+          ) : null}
+          {activeCard?.imageWarning ? (
+            <div class="ai-card-warning">
+              <Icon name="alert" size={14} />
+              <span>{activeCard.imageWarning}</span>
             </div>
           ) : null}
           {imageLoadError ? (
