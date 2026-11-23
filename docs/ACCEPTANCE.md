@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.6.0
+# 验收记录 · 媒材工坊 MediaDesk v0.7.0
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,18 +13,18 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.6.0_aarch64.dmg` | 3,806,701 bytes / 3.63 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.6.0_aarch64.app.zip` | 3,342,346 bytes / 3.19 MiB | 由 .app 压缩 |
-| 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,537,824 bytes / 3.37 MiB | 独立目录启动 + HTTP 验证 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.7.0_aarch64.dmg` | 3,864,605 bytes / 3.69 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.7.0_aarch64.app.zip` | 3,399,865 bytes / 3.24 MiB | 由 .app 压缩 |
+| 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,686,832 bytes / 3.52 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
 
 SHA-256：
 
 ```
-4e546d6d2640ecea267cf6529da2f28e76e36362b543e3ba0cc915a871ab1e45  mediadesk-server-macos-arm64
-2e26910f534776b5a81a8297ec44c3b435675ba90acee8c787410bcfbd0a7d17  媒材工坊_0.6.0_aarch64.app.zip
-5e4b6da03134a32a38df7bc4d1f001549c2dea874cc831ed66bf0b35bc9c1203  媒材工坊_0.6.0_aarch64.dmg
+7e938cef2cd22c68a3cddfb123acd9b619b11f9d5e1ddebaa097fdd9a7685b59  mediadesk-server-macos-arm64
+9e9fa68a058ba3c4f2531bc8bc82554c3d3f7e048c60ad65771c6eff256b245b  媒材工坊_0.7.0_aarch64.app.zip
+c8d5c83abd78a97e9c2132b862175e2a8ad295e7108b33d6bf759803e558b42f  媒材工坊_0.7.0_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -39,17 +39,17 @@ SHA-256：
 |---|---|
 | `npm run typecheck` | 通过（0 error） |
 | `npm test` | 5 个测试文件 / **19 tests passed** |
-| `cargo test --workspace --exclude mediadesk-desktop` | **31 tests passed**（13 unit + 18 integration） |
+| `cargo test --workspace --exclude mediadesk-desktop` | **34 tests passed**（15 unit + 19 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
 | `cargo fmt --all -- --check` | 通过 |
-| `npm run build` | 通过；JS 242.99 kB（gzip 80.32 kB），CSS 118.69 kB（gzip 20.18 kB） |
+| `npm run build` | 通过；JS 256.52 kB（gzip 84.09 kB），CSS 122.23 kB（gzip 20.72 kB） |
 
 ### 2.2 Playwright 端到端
 
 真实 Microsoft Edge（Chromium 内核）+ 真实 Rust 服务 + mock LLM + mock 媒体接口 + mock CLI + fake VS Code CLI：
 
 ```text
-Running 10 tests using 1 worker
+Running 11 tests using 1 worker
 ✓ creator workflow: capture → project → create → generate → VSCode → upload → skills → search
 ✓ mobile layout: drawer navigation and quick capture entry
 ✓ IME composition is not interrupted by Enter or controlled input resets
@@ -59,8 +59,9 @@ Running 10 tests using 1 worker
 ✓ asset management deletes one item and a batch
 ✓ AI card studio generates an editorial PNG and saves it
 ✓ media generation saves an illustration into the project
+✓ library assistant creates and deletes skills with isolated history
 ✓ provider catalog: accordion and model list
-10 passed (40.6s)
+11 passed (53.8s)
 ```
 
 本轮新增覆盖：
@@ -72,7 +73,8 @@ Running 10 tests using 1 worker
 - 项目助手走 SSE 流式接口：建议式生成后出现「采纳并写入」，确认后覆盖素材，按钮变为「已写入」，刷新后状态保持；
 - 空 card 目录场景：助手返回 `newAssets`，建议式下文件数仍为 0；确认后创建 3 个 `.md` 文卡图素材，项目 `assets.card` 数量变为 3；
 - 输入法组合：合成 `compositionstart` / `isComposing` 事件期间按 Enter 不会添加标签或触发保存，组合结束后文字仍能提交；
-- AI 文卡图：mock 文本模型返回 3 张结构化方案，mock 图像模型逐张返回 PNG → Canvas 生成 3 张 1080×1440 卡片 → 一次保存全部后 `assets.card` 有 3 个真实 `fileUrl`，同时保存 3 张 AI 底图插图；
+- AI 文卡图：mock 文本模型返回 3 张结构化方案，mock 图像模型逐张返回 PNG → Canvas 生成 3 张 1080×1440 卡片 → 一次保存全部后 `assets.card` 有 3 个真实 `fileUrl`，同时保存 3 张 AI 底图插图；管理中显示为 1 个叠加缩略图组，点开有 3 张；
+- 技能与预设助手：独立流式对话创建 1 个技能 + 1 个预设，再通过第二条消息删除两者；历史记录独立，项目助手历史仍为空；
 - 批量删除：单张删除确认后卡片减少；批量选择 2 张后一次移入回收站，项目 `assets.article` 变为 0；
 - 助手入口：切换到「脚本」Tab 后右下角悬浮「助手」仍可见并可打开右侧栏。
 
@@ -80,10 +82,10 @@ Running 10 tests using 1 worker
 
 Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本机不再需要下载 `chromium-1228`。CI 或无 Edge 的环境仍可通过 `CHROMIUM_PATH` 指定托管浏览器，或设置 `PW_BROWSER=chromium` 回退。
 
-### 2.3 Rust 测试覆盖（31）
+### 2.3 Rust 测试覆盖（34）
 
-- 13 个单元测试：frontmatter 解析、媒体响应解析、任务 ID/状态/URL 提取、媒体扩展名识别；服务商目录包含必需厂商、OpenCode `x-opencode-session` 自动头、Anthropic `x-api-key` + `anthropic-version`、协议 URL 生成；**文卡图 JSON 提取、按文章长度算卡数、空标题/空正文校验**；
-- 18 个集成测试：服务商目录 API、模型列表归一化、Anthropic Messages 协议、OpenAI Responses 协议、**AI 文卡图结构化方案**、媒体三类协议、CLI 探测/cwd/stdin/错误、助手 suggest/apply/history、**助手 SSE 流式接口（API 与 Claude stream-json）**、**保存后的建议再次采纳**、**空 card 目录批量新建**、文件安全、VSCode、技能/预设等。
+- 15 个单元测试：frontmatter 解析、媒体响应解析、任务 ID/状态/URL 提取、媒体扩展名识别；服务商目录包含必需厂商、OpenCode `x-opencode-session` 自动头、Anthropic `x-api-key` + `anthropic-version`、协议 URL 生成；**文卡图 JSON 提取、按文章长度算卡数、空标题/空正文校验**、**技能助手 action JSON 解析**；
+- 19 个集成测试：服务商目录 API、模型列表归一化、Anthropic Messages 协议、OpenAI Responses 协议、**AI 文卡图结构化方案**、媒体三类协议、CLI 探测/cwd/stdin/错误、助手 suggest/apply/history、**助手 SSE 流式接口（API 与 Claude stream-json）**、**保存后的建议再次采纳**、**空 card 目录批量新建**、**技能助手独立历史与直接变更**、文件安全、VSCode、技能/预设等。
 
 ### 2.4 真实网络与流式验证（非自动化测试）
 
@@ -97,7 +99,8 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 助手增量 SSE（慢速 stream-json CLI） | 状态事件后约 0.03s 收到首段 delta，1.4s 后收到下一段，1.9s 收到 done；界面在生成过程中显示文本与光标 |
 | 助手建议采纳 | 保存 suggest 消息 → 通过 `/chat/apply` 覆盖 → 素材内容变化、`applied=true`、刷新后按钮不再出现 |
 | 助手空目录新建 | 空 card 目录 → suggest 只返回 newAssets，文件数仍为 0 → apply 生成 3 个 `.md`；项目 card 计数为 3 |
-| AI 文卡图 | 文章 → 按长度拆多张 JSON 方案 → 逐张 mock 图像配图 → Canvas 1080×1440 → 一次保存全部 card PNG |
+| AI 文卡图 | 文章 → 按长度拆多张 JSON 方案 → 逐张 mock 图像配图 → Canvas 1080×1440 → 一次保存全部 card PNG，管理页折叠为叠加组 |
+| 技能与预设助手 | 独立上下文、全局文本内核、SSE 流式；直接执行技能/预设创建、更新、删除 | Playwright 流式创建/删除技能与预设；Rust 独立历史与 action 执行 |
 | 批量删除 | 文章/脚本/插图/文卡/视频管理页支持勾选、全选、删除所选；卡片悬停独立删除 | Playwright 单项删除 + 批量删除；服务端统一移入 `.mediadesk/trash` |
 | 助手随时唤起 | 项目任意 Tab 右下角悬浮入口；`⌘⇧A` / `Ctrl+Shift+A` 快捷键 | Playwright 在脚本 Tab 通过悬浮入口打开右侧栏 |
 
@@ -126,15 +129,15 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 
 | 指标 | 实测 |
 |---|---|
-| 浏览器服务二进制 | **3,537,824 bytes / 3.37 MiB** |
-| 浏览器服务 RSS（空载） | **8,576 KiB / 8.4 MiB** |
+| 浏览器服务二进制 | **3,686,832 bytes / 3.52 MiB** |
+| 浏览器服务 RSS（空载） | **8,672 KiB / 8.5 MiB** |
 | 冷启动到 `/api/health` 可用 | **0.147s**（缓存态） |
-| 前端 JS / CSS（gzip） | **80.32 KiB / 20.18 KiB** |
-| macOS `.app` | **6.17 MiB** |
-| macOS `.dmg` | **3.63 MiB** |
-| 原生主进程 RSS（打开工作台） | **94,816 KiB / 92.6 MiB**（系统 WKWebView，XPC 进程另计） |
+| 前端 JS / CSS（gzip） | **84.09 KiB / 20.72 KiB** |
+| macOS `.app` | **6.29 MiB** |
+| macOS `.dmg` | **3.69 MiB** |
+| 原生主进程 RSS（打开工作台） | **94,368 KiB / 92.2 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.6.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.7.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---
@@ -165,7 +168,8 @@ DMG 已通过 `hdiutil verify` 校验。
 7. 助手新建文卡图保存的是文案 `.md` sidecar，不渲染 PNG；需要图片时请用「AI 文卡图」生成。
 8. AI 文卡图的正文与来源由文本模型提炼，未做事实校验；配图质量取决于媒体模型，未用真实付费图像账号验收。文卡配图会作为独立插图素材保存。
 9. 输入法兼容用合成组合事件验证，未在每一种系统输入法/浏览器组合上实测。
-10. 未做 Apple 签名/公证；公开分发需自行配置证书。
+10. 技能与预设助手会自动执行创建/更新/删除动作；更新会覆盖原文件，删除进回收站，助手内没有自动回滚，重要操作前建议自行备份工作区。
+11. 未做 Apple 签名/公证；公开分发需自行配置证书。
 
 ---
 

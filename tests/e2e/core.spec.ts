@@ -540,6 +540,16 @@ test('AI card studio generates an editorial PNG and saves it', async ({ page, re
   await page.screenshot({ path: path.join(SHOTS, '16-ai-card.png') });
   await studio.getByRole('button', { name: '保存全部 3 张' }).click();
   await expect(page.locator('.toast-host')).toContainText('已存入 3 张文卡图 PNG', { timeout: 15_000 });
+  await expect(page.getByRole('dialog').locator('.asset-editor')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: '取消' }).click();
+  await expect(page.locator('.card-group-card')).toHaveCount(1);
+  await expect(page.locator('.card-group-count')).toContainText('3 张');
+  await page.locator('.card-group-card').click();
+  await expect(page.locator('.card-group-modal')).toBeVisible();
+  await expect(page.locator('.card-group-grid .card-group-item')).toHaveCount(3);
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: path.join(SHOTS, '18-card-group.png') });
+  await page.getByRole('contentinfo').getByRole('button', { name: '关闭' }).click();
 
   const after = await (await request.get(`/api/projects/${project.id}`)).json();
   expect(after.assets.card).toHaveLength(3);
@@ -602,6 +612,41 @@ test('media generation saves an illustration into the project', async ({ page, r
   await expect(page.getByRole('dialog').locator('.asset-editor')).toBeVisible();
 });
 
+
+test('library assistant creates and deletes skills with isolated history', async ({ page, request }) => {
+  const kernel = await request.put('/api/config/kernel', {
+    data: { kernel: 'claude', binary: null, args: [], timeoutSecs: 60 },
+  });
+  expect(kernel.ok()).toBeTruthy();
+
+  await page.goto('/library');
+  const fab = page.getByRole('button', { name: '打开技能与预设助手' });
+  await expect(fab).toBeVisible();
+  await fab.click();
+  const panel = page.locator('.library-assistant-sidebar');
+  await expect(panel).toBeVisible();
+  await panel.locator('textarea').fill('为文卡图创建一套 E2E 技能和预设。');
+  await panel.getByRole('button', { name: '发送' }).click();
+  await expect(panel).toContainText('已执行 2 项', { timeout: 15_000 });
+  await page.screenshot({ path: path.join(SHOTS, '19-library-assistant.png') });
+
+  await panel.getByRole('button', { name: '关闭技能助手' }).click();
+  await expect(page.locator('.skill-card').filter({ hasText: 'E2E 文卡方法' })).toBeVisible();
+  await page.locator('.library-tab').filter({ hasText: '创作预设' }).click();
+  await expect(page.locator('.preset-card').filter({ hasText: 'E2E 文卡预设' })).toBeVisible();
+
+  await page.getByRole('button', { name: '打开技能与预设助手' }).click();
+  await panel.locator('textarea').fill('删除 E2E 文卡方法 和 E2E 文卡预设。');
+  await panel.getByRole('button', { name: '发送' }).click();
+  await expect(panel).toContainText('已执行 2 项', { timeout: 15_000 });
+  await panel.getByRole('button', { name: '关闭技能助手' }).click();
+  await expect(page.locator('.preset-card').filter({ hasText: 'E2E 文卡预设' })).toHaveCount(0);
+  await page.locator('.library-tab').filter({ hasText: '创作技能' }).click();
+  await expect(page.locator('.skill-card').filter({ hasText: 'E2E 文卡方法' })).toHaveCount(0);
+
+  const skills = await (await request.get('/api/skills')).json();
+  expect(skills.some((skill: { name: string }) => skill.name === 'E2E 文卡方法')).toBeFalsy();
+});
 
 test('provider catalog: accordion and model list', async ({ page }) => {
   await page.goto('/settings');

@@ -181,6 +181,10 @@ export function AiCardStudio({
     setSaving(true);
     setError('');
     const savedIds: string[] = [];
+    const groupId = `card-group-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const groupTitle = cards.length > 1
+      ? `${cards[0].plan.title} 等 ${cards.length} 张`
+      : cards[0]?.plan.title || 'AI 文卡图';
     try {
       for (let index = 0; index < cards.length; index += 1) {
         setSaveProgress(`${index + 1} / ${cards.length}`);
@@ -188,7 +192,13 @@ export function AiCardStudio({
         const blob = await renderCardBlob(card);
         const safeTitle = card.plan.title.replace(/[\\/:*?"<>|]/g, '-').slice(0, 40) || `文卡图-${index + 1}`;
         const file = new File([blob], `${safeTitle}.png`, { type: 'image/png' });
-        const asset = await api.uploadAsset(project.id, 'card', file, { title: card.plan.title });
+        const asset = await api.uploadAsset(project.id, 'card', file, {
+          title: card.plan.title,
+          groupId,
+          groupTitle,
+          groupIndex: index + 1,
+          groupTotal: cards.length,
+        });
         savedIds.push(asset.id);
       }
       await Promise.all([app.refreshProjects(), app.refreshWorkspace()]);

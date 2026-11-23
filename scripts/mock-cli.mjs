@@ -3,7 +3,45 @@ import fs from 'node:fs';
 
 const prompt = fs.readFileSync(0, 'utf8').trim();
 const cardPlan = prompt.includes('MEDIADESK_CARD_PROTOCOL');
+const libraryAssistant = prompt.includes('MEDIADESK_LIBRARY_PROTOCOL');
 const assistant = prompt.includes('MEDIADESK_ASSISTANT_PROTOCOL');
+
+if (libraryAssistant) {
+  const libraryMessage = prompt.split('# 新消息').pop() || '';
+  if (libraryMessage.includes('删除')) {
+    const skillId = (prompt.match(/### 《E2E 文卡方法》[\s\S]{0,240}?id: ([^\n]+)/) || [])[1];
+    const presetId = (prompt.match(/### 《E2E 文卡预设》[\s\S]{0,240}?id: ([^\n]+)/) || [])[1];
+    const actions = [];
+    if (skillId) actions.push({ type: 'deleteSkill', id: skillId.trim() });
+    if (presetId) actions.push({ type: 'deletePreset', id: presetId.trim() });
+    process.stdout.write(JSON.stringify({
+      reply: actions.length ? '已删除这组技能与预设。' : '没有找到可删除的测试技能。',
+      actions,
+    }));
+    process.exit(0);
+  }
+  process.stdout.write(JSON.stringify({
+    reply: '已创建一套用于文卡图的技能与预设，并直接写入技能库。',
+    actions: [
+      {
+        type: 'createSkill',
+        name: 'E2E 文卡方法',
+        description: '把文章拆成短卡',
+        appliesTo: ['article', 'card'],
+        content: '# E2E 文卡方法\n\n一张卡片只保留一个观点。\n\n- 先给结论\n- 再解释理由',
+      },
+      {
+        type: 'createPreset',
+        name: 'E2E 文卡预设',
+        description: '测试用文卡规范',
+        kind: 'card',
+        skillIds: [],
+        content: '# E2E 文卡预设\n\n标题克制，正文不超过三段，来源可核查。',
+      },
+    ],
+  }));
+  process.exit(0);
+}
 
 if (cardPlan) {
   process.stdout.write(JSON.stringify({

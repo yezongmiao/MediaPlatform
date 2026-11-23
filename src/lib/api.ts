@@ -13,6 +13,9 @@ import type {
   Idea,
   Kind,
   KernelStatus,
+  LibraryAssistantHistory,
+  LibraryAssistantResponse,
+  LibraryAssistantStreamEvent,
   ModelListResponse,
   ProviderSpec,
   RequestHeader,
@@ -260,11 +263,22 @@ export const api = {
     projectId: string,
     kind: Kind,
     file: File,
-    opts: { assetId?: string; title?: string } = {},
+    opts: {
+      assetId?: string;
+      title?: string;
+      groupId?: string;
+      groupTitle?: string;
+      groupIndex?: number;
+      groupTotal?: number;
+    } = {},
   ): Promise<Asset> => {
     const params = new URLSearchParams({ kind, filename: file.name });
     if (opts.assetId) params.set('assetId', opts.assetId);
     if (opts.title) params.set('title', opts.title);
+    if (opts.groupId) params.set('groupId', opts.groupId);
+    if (opts.groupTitle) params.set('groupTitle', opts.groupTitle);
+    if (opts.groupIndex) params.set('groupIndex', String(opts.groupIndex));
+    if (opts.groupTotal) params.set('groupTotal', String(opts.groupTotal));
     const response = await fetch(`/api/projects/${projectId}/uploads?${params.toString()}`, {
       method: 'POST',
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
@@ -372,6 +386,86 @@ export const api = {
     }),
   clearAssistantHistory: (projectId: string) =>
     jsonRequest<void>(`/api/projects/${projectId}/chat`, 'DELETE'),
+
+  getLibraryAssistantHistory: () =>
+    request<LibraryAssistantHistory>('/api/library/assistant'),
+  clearLibraryAssistantHistory: () =>
+    jsonRequest<void>('/api/library/assistant', 'DELETE'),
+  streamLibraryAssistant: async (
+    payload: { message: string },
+    onEvent: (event: LibraryAssistantStreamEvent) => void,
+  ): Promise<LibraryAssistantResponse> => {
+    let response: Response;
+    try {
+      response = await fetch('/api/library/assistant/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+    } catch (err) {
+      throw new ApiError(
+        err instanceof Error ? `网络请求失败：${err.message}` : '网络请求失败',
+        'NETWORK',
+        0,
+      );
+    }
+    if (!response.ok) {
+      const text = await response.text();
+      let payloadData: { error?: ApiErrorPayload } | null = null;
+      try {
+        payloadData = text ? JSON.parse(text) : null;
+      } catch {
+        payloadData = null;
+      }
+      const error = payloadData?.error;
+      throw new ApiError(
+        error?.message ?? `助手请求失败（HTTP ${response.status}）`,
+        error?.code ?? 'HTTP_ERROR',
+        response.status,
+        error?.details ?? text,
+      );
+    }
+    if (!response.body) throw new ApiError('浏览器不支持流式响应', 'STREAM_UNSUPPORTED');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalResponse: LibraryAssistantResponse | null = null;
+    const consume = (chunk: string) => {
+      buffer += chunk;
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() ?? '';
+      for (const block of blocks) {
+        const data = block
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart())
+          .join('\n');
+        if (!data) continue;
+        let event: LibraryAssistantStreamEvent;
+        try {
+          event = JSON.parse(data) as LibraryAssistantStreamEvent;
+        } catch {
+          continue;
+        }
+        if (event.type === 'error') {
+          throw new ApiError(event.message, event.code, 502);
+        }
+        if (event.type === 'done') finalResponse = event.response;
+        onEvent(event);
+      }
+    };
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      consume(decoder.decode(value, { stream: true }));
+    }
+    consume(decoder.decode());
+    if (buffer.trim()) consume('\n\n');
+    if (!finalResponse) {
+      throw new ApiError('助手流式连接中断，请重试。', 'STREAM_ABORTED', 502);
+    }
+    return finalResponse;
+  },
 
   listSkills: () => request<Skill[]>('/api/skills'),
   createSkill: (payload: SkillInput) => jsonRequest<Skill>('/api/skills', 'POST', payload),

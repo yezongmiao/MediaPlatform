@@ -3,6 +3,7 @@ import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { Icon } from '../components/Icon';
 import { MarkdownView } from '../components/MarkdownView';
+import { LibraryAssistantPanel } from '../components/LibraryAssistantPanel';
 import { Badge, Button, ConfirmDialog, EmptyState, Field, Modal } from '../components/ui';
 import type { Kind, Preset, Skill } from '../lib/types';
 import { KINDS, KIND_MAP } from '../lib/types';
@@ -15,6 +16,7 @@ export function LibraryPage() {
   const [tab, setTab] = useState<LibraryTab>('skills');
   const [editingSkill, setEditingSkill] = useState<Skill | 'new' | null>(null);
   const [editingPreset, setEditingPreset] = useState<Preset | 'new' | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
 
   const kindCount = useMemo(() => {
     const map = new Map<Kind, number>();
@@ -35,6 +37,13 @@ export function LibraryPage() {
           </p>
         </div>
         <div class="heading-actions">
+          <Button
+            variant="secondary"
+            icon="spark"
+            onClick={() => setAssistantOpen(true)}
+          >
+            助手
+          </Button>
           <Button
             variant="primary"
             icon="plus"
@@ -159,6 +168,27 @@ export function LibraryPage() {
         open={editingPreset !== null}
         onClose={() => setEditingPreset(null)}
       />
+
+      {!assistantOpen ? (
+        <button
+          type="button"
+          class="assistant-fab library-assistant-fab"
+          aria-label="打开技能与预设助手"
+          title="打开技能与预设助手"
+          onClick={() => setAssistantOpen(true)}
+        >
+          <Icon name="spark" size={17} />
+          <span>技能助手</span>
+        </button>
+      ) : null}
+
+      {assistantOpen ? (
+        <LibraryAssistantPanel
+          open={assistantOpen}
+          onClose={() => setAssistantOpen(false)}
+          onChanged={app.refreshLibrary}
+        />
+      ) : null}
     </div>
   );
 }

@@ -226,7 +226,7 @@ pub struct PromoteIdea {
 // Assets
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetMeta {
     pub id: String,
@@ -246,6 +246,15 @@ pub struct AssetMeta {
     pub prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// AI 文卡图一次生成的同组 PNG 共享这些字段；普通卡片为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_group_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_group_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_group_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_group_total: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]

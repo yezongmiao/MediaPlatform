@@ -28,6 +28,7 @@ use crate::cli;
 use crate::context;
 use crate::error::{ApiError, ApiResult};
 use crate::library;
+use crate::library_assistant;
 use crate::llm;
 use crate::models::*;
 use crate::providers;
@@ -116,6 +117,14 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/llm/test", post(test_llm))
         .route("/api/llm/prompt", post(preview_prompt))
         .route("/api/llm/generate", post(generate))
+        .route(
+            "/api/library/assistant",
+            get(get_library_assistant_history).delete(clear_library_assistant_history),
+        )
+        .route(
+            "/api/library/assistant/stream",
+            post(stream_library_assistant),
+        )
         .route("/api/skills", get(list_skills).post(create_skill))
         .route("/api/skills/{id}", put(update_skill).delete(delete_skill))
         .route("/api/presets", get(list_presets).post(create_preset))
@@ -641,6 +650,10 @@ struct UploadQuery {
     asset_id: Option<String>,
     filename: String,
     title: Option<String>,
+    group_id: Option<String>,
+    group_title: Option<String>,
+    group_index: Option<usize>,
+    group_total: Option<usize>,
 }
 
 const MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
@@ -679,6 +692,12 @@ async fn upload_asset(
         query.asset_id.as_deref(),
         &query.filename,
         query.title.as_deref(),
+        Some(assets::UploadCardGroup {
+            id: query.group_id,
+            title: query.group_title,
+            index: query.group_index,
+            total: query.group_total,
+        }),
     )
     .await?;
     let temp_path = plan.temp_path.clone();
@@ -827,6 +846,44 @@ async fn generate_card_plan(
     Ok(Json(
         card_gen::generate_plan(&state.workspace(), &state.client, &id, req).await?,
     ))
+}
+
+async fn get_library_assistant_history(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<Json<library_assistant::LibraryAssistantHistory>> {
+    Ok(Json(
+        library_assistant::load_history(&state.workspace()).await?,
+    ))
+}
+
+async fn clear_library_assistant_history(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<StatusCode> {
+    library_assistant::clear_history(&state.workspace()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn stream_library_assistant(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<library_assistant::LibraryAssistantRequest>,
+) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+    let (tx, rx) =
+        tokio::sync::mpsc::unbounded_channel::<library_assistant::LibraryAssistantStreamEvent>();
+    let workspace = state.workspace();
+    let client = state.client.clone();
+    tokio::spawn(async move {
+        library_assistant::chat_stream(&workspace, &client, req, tx).await;
+    });
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|event| {
+            let data = serde_json::to_string(&event).unwrap_or_else(|_| {
+                "{\"type\":\"error\",\"code\":\"STREAM_ENCODE\",\"message\":\"事件编码失败\"}"
+                    .to_string()
+            });
+            (Ok::<_, Infallible>(Event::default().data(data)), rx)
+        })
+    });
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 async fn clear_assistant_history(

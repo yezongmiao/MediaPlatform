@@ -1,7 +1,7 @@
 {
   "name": "mediadesk",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "媒材工坊 MediaDesk — 自媒体灵感与素材工作台",
   "type": "module",
   "scripts": {

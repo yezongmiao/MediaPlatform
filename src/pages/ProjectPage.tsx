@@ -5,6 +5,8 @@ import { isImeComposing } from '../lib/ime';
 import type { Asset, Kind, Project } from '../lib/types';
 import { KINDS, KIND_MAP } from '../lib/types';
 import { AssetCard } from '../components/AssetCard';
+import { CardGroupCard } from '../components/CardGroupCard';
+import { CardGroupViewer } from '../components/CardGroupViewer';
 import { AssistantPanel } from '../components/AssistantPanel';
 import { AssetEditor } from '../components/AssetEditor';
 import { AiCardStudio } from '../components/AiCardStudio';
@@ -42,6 +44,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteTargets, setDeleteTargets] = useState<Asset[]>([]);
   const [deleting, setDeleting] = useState(false);
+  const [cardGroupView, setCardGroupView] = useState<Asset[] | null>(null);
   const [vscodeLoading, setVscodeLoading] = useState(false);
   const [vscodeFallback, setVscodeFallback] = useState<VscodeFallback | null>(null);
   const [uploadKind, setUploadKind] = useState<Kind | null>(null);
@@ -193,6 +196,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const counts = project?.counts;
   const activeKind = tab !== 'overview' ? KIND_MAP[tab] : null;
   const activeAssets = tab !== 'overview' ? project?.assets[tab] ?? [] : [];
+  const cardGroups = useMemo(() => groupCardAssets(activeAssets), [activeAssets]);
 
   useEffect(() => {
     setSelectionMode(false);
@@ -204,6 +208,18 @@ export function ProjectPage({ projectId }: { projectId: string }) {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleCardGroup = (groupAssets: Asset[]) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      const allSelected = groupAssets.every((asset) => next.has(asset.id));
+      groupAssets.forEach((asset) => {
+        if (allSelected) next.delete(asset.id);
+        else next.add(asset.id);
+      });
       return next;
     });
   };
@@ -586,7 +602,34 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             </div>
           ) : null}
 
-          {activeAssetGrid(
+          {tab === 'card' && activeAssets.length ? (
+            <div class="asset-grid">
+              {cardGroups.map((group) =>
+                group.grouped || group.assets.length > 1 ? (
+                  <CardGroupCard
+                    key={group.key}
+                    assets={group.assets}
+                    selectable={selectionMode}
+                    selected={group.assets.every((asset) => selectedIds.has(asset.id))}
+                    onSelect={() => toggleCardGroup(group.assets)}
+                    onOpen={() => setCardGroupView(group.assets)}
+                    onDelete={() => setDeleteTargets(group.assets)}
+                  />
+                ) : (
+                  <AssetCard
+                    key={group.key}
+                    asset={group.assets[0]}
+                    onOpen={() => openAsset(group.assets[0])}
+                    onPreview={group.assets[0].fileUrl ? () => setLightbox(group.assets[0]) : undefined}
+                    selectable={selectionMode}
+                    selected={selectedIds.has(group.assets[0].id)}
+                    onSelect={() => toggleSelected(group.assets[0].id)}
+                    onDelete={() => deleteOne(group.assets[0])}
+                  />
+                ),
+              )}
+            </div>
+          ) : activeAssetGrid(
             activeAssets,
             openAsset,
             (asset) => setLightbox(asset),
@@ -665,6 +708,25 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             const found = (data.assets.card ?? []).find((asset) => asset.id === assetId);
             if (found) openAsset(found);
           }
+        }}
+      />
+
+      <CardGroupViewer
+        assets={cardGroupView ?? []}
+        open={Boolean(cardGroupView)}
+        onClose={() => setCardGroupView(null)}
+        onOpenAsset={(asset) => {
+          setCardGroupView(null);
+          openAsset(asset);
+        }}
+        onDeleteAsset={(asset) => {
+          setCardGroupView(null);
+          deleteOne(asset);
+        }}
+        onDeleteGroup={() => {
+          const group = cardGroupView ?? [];
+          setCardGroupView(null);
+          setDeleteTargets(group);
         }}
       />
 
@@ -764,6 +826,33 @@ export function ProjectPage({ projectId }: { projectId: string }) {
       ) : null}
     </div>
   );
+}
+
+interface CardAssetGroup {
+  key: string;
+  assets: Asset[];
+  grouped: boolean;
+}
+
+function groupCardAssets(assets: Asset[]): CardAssetGroup[] {
+  const map = new Map<string, Asset[]>();
+  const order: string[] = [];
+  for (const asset of assets) {
+    const key = asset.cardGroupId ? `group:${asset.cardGroupId}` : `asset:${asset.id}`;
+    if (!map.has(key)) {
+      map.set(key, []);
+      order.push(key);
+    }
+    map.get(key)!.push(asset);
+  }
+  return order.map((key) => {
+    const group = map.get(key)!;
+    const grouped = Boolean(group[0]?.cardGroupId);
+    if (grouped) {
+      group.sort((a, b) => (a.cardGroupIndex ?? 0) - (b.cardGroupIndex ?? 0));
+    }
+    return { key, assets: group, grouped };
+  });
 }
 
 function activeAssetGrid(

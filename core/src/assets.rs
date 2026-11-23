@@ -237,6 +237,7 @@ pub async fn scan_kind(
                 file: Some(file_name.clone()),
                 prompt: None,
                 source: Some("manual".into()),
+                ..AssetMeta::default()
             };
             let sidecar = dir.join(format!("{stem}.md"));
             let raw = frontmatter::render(&meta, "")
@@ -264,6 +265,7 @@ pub async fn scan_kind(
                     file: Some(file_name.clone()),
                     prompt: None,
                     source: Some("manual".into()),
+                    ..AssetMeta::default()
                 },
                 content: String::new(),
                 file_url: Some(media_url(&record.dir_name, kind, &file_name)),
@@ -424,6 +426,7 @@ pub async fn create_asset(
             Some("llm") => "llm".into(),
             _ => "manual".into(),
         }),
+        ..AssetMeta::default()
     };
     fs::create_dir_all(record.dir_path.join(&req.kind)).await?;
     let slug = slugify(&meta.title);
@@ -510,6 +513,14 @@ pub struct UploadPlan {
     pub replaced: Option<PathBuf>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct UploadCardGroup {
+    pub id: Option<String>,
+    pub title: Option<String>,
+    pub index: Option<usize>,
+    pub total: Option<usize>,
+}
+
 pub async fn plan_upload(
     workspace: &Path,
     project_id: &str,
@@ -517,6 +528,7 @@ pub async fn plan_upload(
     asset_id: Option<&str>,
     file_name: &str,
     title: Option<&str>,
+    card_group: Option<UploadCardGroup>,
 ) -> ApiResult<UploadPlan> {
     if !is_media_kind(kind) {
         return Err(ApiError::bad_request("该素材类型不支持上传文件"));
@@ -560,6 +572,17 @@ pub async fn plan_upload(
         let mut meta = location.meta;
         meta.title = resolved_title;
         meta.file = Some(media_name);
+        if let Some(group) = card_group.as_ref().filter(|group| {
+            group.id.is_some()
+                || group.title.is_some()
+                || group.index.is_some()
+                || group.total.is_some()
+        }) {
+            meta.card_group_id = group.id.clone().filter(|v| !v.trim().is_empty());
+            meta.card_group_title = group.title.clone().filter(|v| !v.trim().is_empty());
+            meta.card_group_index = group.index;
+            meta.card_group_total = group.total;
+        }
         meta.updated_at = now_iso();
         return Ok(UploadPlan {
             project_id: project_id.to_string(),
@@ -593,6 +616,16 @@ pub async fn plan_upload(
         file: Some(media_name),
         prompt: None,
         source: Some("manual".into()),
+        card_group_id: card_group
+            .as_ref()
+            .and_then(|group| group.id.clone())
+            .filter(|v| !v.trim().is_empty()),
+        card_group_title: card_group
+            .as_ref()
+            .and_then(|group| group.title.clone())
+            .filter(|v| !v.trim().is_empty()),
+        card_group_index: card_group.as_ref().and_then(|group| group.index),
+        card_group_total: card_group.as_ref().and_then(|group| group.total),
     };
     Ok(UploadPlan {
         project_id: project_id.to_string(),

@@ -655,6 +655,7 @@ pub async fn generate(
         None,
         &file_name,
         Some(&title),
+        None,
     )
     .await?;
     fs::write(&plan.temp_path, &bytes)

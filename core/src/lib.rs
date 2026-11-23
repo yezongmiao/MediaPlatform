@@ -7,6 +7,7 @@ pub mod context;
 pub mod error;
 pub mod frontmatter;
 pub mod library;
+pub mod library_assistant;
 pub mod llm;
 pub mod media_gen;
 pub mod models;

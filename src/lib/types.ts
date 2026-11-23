@@ -137,6 +137,10 @@ export interface AssetMeta {
   file?: string;
   prompt?: string;
   source?: 'manual' | 'llm' | 'media-gen';
+  cardGroupId?: string;
+  cardGroupTitle?: string;
+  cardGroupIndex?: number;
+  cardGroupTotal?: number;
 }
 
 export interface Asset extends AssetMeta {
@@ -145,6 +149,63 @@ export interface Asset extends AssetMeta {
   relPath: string;
   projectId: string;
 }
+
+export type LibraryActionType =
+  | 'createSkill'
+  | 'updateSkill'
+  | 'deleteSkill'
+  | 'createPreset'
+  | 'updatePreset'
+  | 'deletePreset';
+
+export interface LibraryAction {
+  type: LibraryActionType;
+  name?: string;
+  id?: string;
+  description?: string;
+  appliesTo?: Kind[];
+  kind?: Kind;
+  skillIds?: string[];
+  content?: string;
+}
+
+export interface LibraryActionResult {
+  action: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface LibraryAssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+  actions?: LibraryAction[];
+  applied?: boolean;
+}
+
+export interface LibraryAssistantHistory {
+  messages: LibraryAssistantMessage[];
+  kernel: string;
+}
+
+export interface LibraryAssistantResponse {
+  reply: string;
+  actions: LibraryAction[];
+  results: LibraryActionResult[];
+  warnings: string[];
+  applied: boolean;
+  kernel: string;
+  model: string;
+  latencyMs: number;
+  messages: LibraryAssistantMessage[];
+}
+
+export type LibraryAssistantStreamEvent =
+  | { type: 'status'; message: string }
+  | { type: 'delta'; text: string }
+  | { type: 'done'; response: LibraryAssistantResponse }
+  | { type: 'error'; code: string; message: string };
 
 export interface Project extends ProjectMeta {
   brief: string;
