@@ -1,12 +1,23 @@
 import { existsSync } from 'node:fs';
-import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
-const cachedChromium = path.join(
-  process.env.HOME ?? '',
-  'Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
-);
-const executablePath = process.env.CHROMIUM_PATH ?? (existsSync(cachedChromium) ? cachedChromium : undefined);
+// Prefer the browser the user already has. Playwright can drive system Edge
+// directly; downloading a pinned Chromium is only needed on CI or when no
+// system browser is available. Set CHROMIUM_PATH to force a managed binary,
+// or PW_BROWSER=chromium to ignore Edge.
+const edgeCandidates = [
+  process.env.EDGE_PATH,
+  '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+  '/usr/bin/microsoft-edge',
+  '/usr/bin/microsoft-edge-stable',
+].filter((candidate): candidate is string => Boolean(candidate));
+
+const systemEdge = process.env.PW_BROWSER === 'chromium'
+  ? undefined
+  : edgeCandidates.find((candidate) => existsSync(candidate));
+const executablePath = process.env.CHROMIUM_PATH ?? systemEdge;
 
 export default defineConfig({
   testDir: './tests/e2e',

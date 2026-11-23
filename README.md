@@ -218,6 +218,8 @@ cargo clippy -p mediadesk-core -p mediadesk-server --all-targets -- -D warnings
 
 E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 文卡图导出 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；切换工作区；CLI 文本内核 → 项目助手覆盖式改稿；媒体生成并落盘；服务商折叠、模型列表获取与搜索。
 
+Playwright 默认直接驱动系统 Microsoft Edge，不额外下载 Chromium；CI 无 Edge 时可用 `CHROMIUM_PATH` 指定托管浏览器，或设置 `PW_BROWSER=chromium`。
+
 更多： [架构设计](docs/ARCHITECTURE.md) · [实施计划](docs/superpowers/plans/2026-11-20-media-desk.md) · [验收记录](docs/ACCEPTANCE.md)
 
 ## 已知边界

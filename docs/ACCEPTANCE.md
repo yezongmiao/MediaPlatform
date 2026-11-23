@@ -46,7 +46,7 @@ SHA-256：
 
 ### 2.2 Playwright 端到端
 
-真实 Chromium + 真实 Rust 服务 + mock LLM + mock 媒体接口 + mock CLI + fake VS Code CLI：
+真实 Microsoft Edge（Chromium 内核）+ 真实 Rust 服务 + mock LLM + mock 媒体接口 + mock CLI + fake VS Code CLI：
 
 ```text
 Running 6 tests using 1 worker
@@ -56,7 +56,7 @@ Running 6 tests using 1 worker
 ✓ CLI text kernel and project assistant edits
 ✓ media generation saves an illustration into the project
 ✓ provider catalog: accordion and model list
-6 passed (37.8s)
+6 passed (35.5s)
 ```
 
 新增覆盖（v0.3.0）：
@@ -67,6 +67,8 @@ Running 6 tests using 1 worker
 - 模型列表请求失败时显示错误与重试，不阻塞手动填写。
 
 原有覆盖仍通过：速记、立项、手写文章、API 测试、生成/保存、VSCode 上下文、上传、灯箱、文卡图、项目设置、技能、搜索、回收站、嵌套弹层 Esc、深色主题、移动端、工作区切换与恢复、CLI 文本内核、右侧栏助手覆盖式改稿、媒体生成落盘。
+
+Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本机不再需要下载 `chromium-1228`。CI 或无 Edge 的环境仍可通过 `CHROMIUM_PATH` 指定托管浏览器，或设置 `PW_BROWSER=chromium` 回退。
 
 ### 2.3 Rust 测试覆盖（24）
 
