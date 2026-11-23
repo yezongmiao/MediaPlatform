@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { isImeComposing } from '../lib/ime';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import { Modal } from './ui';
@@ -180,6 +181,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           placeholder="搜索想法、项目、素材，或输入命令…"
           onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'ArrowDown') {
               e.preventDefault();
               setActiveIndex((i) => (items.length ? (i + 1) % items.length : 0));

@@ -3,6 +3,7 @@ import { api, ApiError } from '../lib/api';
 import type { BrowseInfo } from '../lib/types';
 import { Button, InlineError, Modal } from './ui';
 import { Icon } from './Icon';
+import { isImeComposing } from '../lib/ime';
 
 export function FolderBrowser({
   open,
@@ -112,6 +113,7 @@ export function FolderBrowser({
               pathEdited.current = true;
             }}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if (e.key === 'Enter') loadTypedPath();
             }}
           />

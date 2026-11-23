@@ -2,6 +2,7 @@ import { createPortal } from 'preact/compat';
 import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { Icon } from './Icon';
+import { isImeComposing } from '../lib/ime';
 import type { IconName } from './Icon';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'quiet';
@@ -145,6 +146,7 @@ export function TagInput({
         disabled={value.length >= max}
         onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return;
           if (e.key === 'Enter' || e.key === ',') {
             e.preventDefault();
             add();
@@ -200,6 +202,7 @@ export function Modal({
       target?.focus();
     }, 30);
     const handleKey = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       if (event.key === 'Tab') {
         const nodes = panelRef.current?.querySelectorAll<HTMLElement>(
           'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',

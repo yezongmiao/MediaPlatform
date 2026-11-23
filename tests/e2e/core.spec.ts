@@ -279,6 +279,42 @@ test('mobile layout: drawer navigation and quick capture entry', async ({ page }
   await expect(page.getByText('移动端速记测试：想法应该随时可以写下。').first()).toBeVisible();
 });
 
+test('IME composition is not interrupted by Enter or controlled input resets', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sidebar .quick-capture-trigger').click();
+  const dialog = page.getByRole('dialog');
+  const title = `IME 输入法测试 ${Date.now()}`;
+  const titleInput = dialog.getByPlaceholder('给这个想法一个名字');
+  await titleInput.click();
+  await titleInput.evaluate((element, value) => {
+    const input = element as HTMLInputElement;
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    input.value = value;
+    input.dispatchEvent(
+      new InputEvent('input', { bubbles: true, isComposing: true, data: value }),
+    );
+    input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: value }));
+  }, title);
+  await expect(titleInput).toHaveValue(title);
+
+  const tagInput = dialog.getByPlaceholder('输入标签后按回车');
+  await tagInput.fill('IME标签');
+  await tagInput.evaluate((element) => {
+    element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    element.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }),
+    );
+    element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+  });
+  await expect(dialog.locator('.tag').filter({ hasText: 'IME标签' })).toHaveCount(0);
+  await tagInput.press('Enter');
+  await expect(dialog.locator('.tag').filter({ hasText: 'IME标签' })).toHaveCount(1);
+
+  await dialog.getByPlaceholder(/此刻在想什么/).fill('输入法组合期间不应打断，也不应误触保存。');
+  await dialog.getByRole('button', { name: '收进灵感箱' }).click();
+  await expect(page.getByText(title).first()).toBeVisible();
+});
+
 test('switch workspace from settings and restore it', async ({ page, request }) => {
   const altWorkspace = path.join(ROOT, 'artifacts/e2e-alt-workspace');
   fs.rmSync(altWorkspace, { recursive: true, force: true });
@@ -418,6 +454,72 @@ test('assistant creates new card assets in an empty directory', async ({ page, r
   expect(projectAfter.assets.card).toHaveLength(3);
   expect(fs.readdirSync(cardDir).filter((file) => file.endsWith('.md'))).toHaveLength(3);
   await assistant.getByRole('button', { name: '关闭助手' }).click();
+});
+
+test('AI card studio generates an editorial PNG and saves it', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E AI 文卡图', brief: '把文章提炼成一张编辑式卡片。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  const article = await request.post(`/api/projects/${project.id}/assets`, {
+    data: {
+      kind: 'article',
+      title: '把结论放到第一屏',
+      content:
+        '# 写作结构\n\n读者不需要先看你如何抵达，才决定要不要继续读。\n\n先给出判断，再解释理由；卡片只保留一句值得记住的话。',
+    },
+  });
+  expect(article.ok()).toBeTruthy();
+  const kernel = await request.put('/api/config/kernel', {
+    data: { kernel: 'claude', binary: null, args: [], timeoutSecs: 60 },
+  });
+  expect(kernel.ok()).toBeTruthy();
+  const media = await request.put('/api/config/media', {
+    data: {
+      illustration: {
+        baseUrl: MOCK_URL,
+        apiKey: 'media-key',
+        model: 'mock-image-e2e',
+        protocol: 'openai',
+        createPath: '',
+        statusPath: '',
+        style: '暖纸色编辑插画',
+      },
+      video: {
+        baseUrl: MOCK_URL,
+        apiKey: 'media-key',
+        model: 'mock-video-e2e',
+        protocol: 'openai',
+        createPath: '/videos',
+        statusPath: '',
+        style: '纪实慢镜头',
+      },
+      timeoutSecs: 30,
+      pollIntervalSecs: 1,
+      videoTimeoutSecs: 60,
+    },
+  });
+  expect(media.ok()).toBeTruthy();
+
+  await page.goto(`/projects/${project.id}`);
+  await page.locator('.project-tab').filter({ hasText: '文卡图' }).click();
+  await page.getByRole('button', { name: 'AI 文卡图' }).click();
+  const studio = page.locator('.modal-panel.ai-card-modal');
+  await expect(studio).toBeVisible();
+  await studio.getByRole('button', { name: '生成文卡图' }).click();
+  await expect(studio.getByRole('button', { name: '重新生成' })).toBeVisible({ timeout: 15_000 });
+  await expect(studio).toContainText('已带入 AI 配图', { timeout: 15_000 });
+  await expect(studio.locator('.ai-card-canvas')).toHaveAttribute('width', '1080');
+  await page.screenshot({ path: path.join(SHOTS, '16-ai-card.png') });
+  await studio.getByRole('button', { name: '存入项目' }).click();
+  await expect(page.locator('.toast-host')).toContainText('文卡图 PNG 已存入项目');
+
+  const after = await (await request.get(`/api/projects/${project.id}`)).json();
+  expect(after.assets.card).toHaveLength(1);
+  expect(after.assets.card[0].fileUrl).toBeTruthy();
+  expect(after.assets.card[0].title).toBe('把结论放到第一屏');
+  expect(after.assets.illustration).toHaveLength(1);
 });
 
 test('media generation saves an illustration into the project', async ({ page, request }) => {

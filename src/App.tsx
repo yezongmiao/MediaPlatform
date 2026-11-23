@@ -17,6 +17,7 @@ import { ProjectPage } from './pages/ProjectPage';
 import { LibraryPage } from './pages/LibraryPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { navigate } from './lib/router';
+import { isImeComposing } from './lib/ime';
 
 export function App() {
   const route = useRoute();
@@ -64,6 +65,7 @@ export function App() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       const meta = event.metaKey || event.ctrlKey;
       if (!meta) return;
       if (event.key.toLowerCase() === 'k') {

@@ -416,6 +416,25 @@ export interface AssistantApplyResponse {
   messages: AssistantMessage[];
 }
 
+export interface CardPlan {
+  kicker: string;
+  page: string;
+  title: string;
+  body: string[];
+  footnote: string;
+  source: string;
+  imagePrompt?: string;
+}
+
+export interface CardPlanResponse {
+  plan: CardPlan;
+  imageUrl?: string;
+  imageAssetId?: string;
+  imageWarning?: string;
+  model: string;
+  latencyMs: number;
+}
+
 export type AssistantStreamEvent =
   | { type: 'status'; message: string }
   | { type: 'delta'; text: string }

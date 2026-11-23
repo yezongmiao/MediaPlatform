@@ -23,6 +23,7 @@ use tower_http::services::ServeFile;
 
 use crate::assets;
 use crate::assistant;
+use crate::card_gen;
 use crate::cli;
 use crate::context;
 use crate::error::{ApiError, ApiResult};
@@ -153,6 +154,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             "/api/projects/{id}/chat/apply",
             post(apply_assistant_suggestion),
         )
+        .route("/api/projects/{id}/card/plan", post(generate_card_plan))
         .route("/api/search", get(search))
         .route("/files/{*path}", get(serve_file))
         .fallback(ui::fallback)
@@ -814,6 +816,16 @@ async fn apply_assistant_suggestion(
 ) -> ApiResult<Json<AssistantApplyResponse>> {
     Ok(Json(
         assistant::apply_saved_suggestion(&state.workspace(), &id, &req.message_id).await?,
+    ))
+}
+
+async fn generate_card_plan(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<CardPlanRequest>,
+) -> ApiResult<Json<CardPlanResponse>> {
+    Ok(Json(
+        card_gen::generate_plan(&state.workspace(), &state.client, &id, req).await?,
     ))
 }
 

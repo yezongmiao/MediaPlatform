@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { isImeComposing } from '../lib/ime';
 import type { Asset, AssetStatus, Kind, Project } from '../lib/types';
 import { ASSET_STATUS, KIND_MAP } from '../lib/types';
 import { Button, ConfirmDialog, Field, IconButton, Modal, TagInput } from './ui';
@@ -163,6 +164,7 @@ export function AssetEditor({
   useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
+      if (isImeComposing(event)) return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
         save();

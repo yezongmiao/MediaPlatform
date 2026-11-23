@@ -7774,3 +7774,194 @@ input[type="range"] {
   color: var(--muted);
   font-size: 9px;
 }
+
+/* AI editorial card studio */
+.ai-card-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 22px;
+  min-height: 68vh;
+}
+
+.ai-card-stage {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 50% 25%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 56%),
+    var(--surface-sunken);
+}
+
+.ai-card-frame {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(100%, 460px);
+  aspect-ratio: 3 / 4;
+  border-radius: 4px;
+  background: #f3ecdd;
+  box-shadow: 0 24px 60px -38px rgba(38, 29, 18, 0.7);
+  overflow: hidden;
+}
+
+.ai-card-frame.is-empty {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.35), transparent 55%),
+    #f3ecdd;
+}
+
+.ai-card-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ai-card-placeholder,
+.ai-card-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 34px;
+  color: #746a5b;
+  text-align: center;
+  background: rgba(243, 236, 221, 0.92);
+}
+
+.ai-card-placeholder svg {
+  color: #b6452d;
+}
+
+.ai-card-placeholder h3 {
+  max-width: 300px;
+  color: #252019;
+  font-family: "Songti SC", "STSong", serif;
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.ai-card-placeholder p,
+.ai-card-loading small {
+  max-width: 290px;
+  color: #746a5b;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.ai-card-loading strong {
+  color: #252019;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ai-card-stage-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(100%, 460px);
+  gap: 12px;
+  color: var(--faint);
+  font-size: 9.5px;
+}
+
+.ai-card-stage-foot span:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ai-card-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px;
+}
+
+.ai-card-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  cursor: pointer;
+}
+
+.ai-card-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.ai-card-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ai-card-toggle strong {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ai-card-toggle small {
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.ai-card-themes {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.theme-swatch-row {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.theme-swatch-row .theme-swatch {
+  width: 28px;
+  height: 28px;
+}
+
+.ai-card-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, var(--gold) 20%, var(--line));
+  border-radius: var(--radius-sm);
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-size: 9.5px;
+  line-height: 1.55;
+}
+
+@media (max-width: 980px) {
+  .ai-card-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-card-controls {
+    order: -1;
+  }
+
+  .ai-card-frame {
+    width: min(100%, 390px);
+  }
+}

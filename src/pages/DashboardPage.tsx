@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'preact/hooks';
 import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { isImeComposing } from '../lib/ime';
 import { Icon } from '../components/Icon';
 import { ProjectCard } from '../components/ProjectCard';
 import { Button, EmptyState } from '../components/ui';
@@ -87,6 +88,7 @@ export function DashboardPage() {
           placeholder="今天想做什么内容？一句话、一个观点、一个画面都可以…"
           onInput={(e) => setDraft((e.target as HTMLTextAreaElement).value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
               e.preventDefault();
               saveDraft();

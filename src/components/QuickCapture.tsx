@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { isImeComposing } from '../lib/ime';
 import { Button, Field, Modal, TagInput } from './ui';
 import { navigate } from '../lib/router';
 
@@ -96,6 +97,7 @@ export function QuickCapture({ open, onClose }: { open: boolean; onClose: () => 
             placeholder={'此刻在想什么？\n\n可以是一句话、一个观点、一个画面、一个还没想清楚的念头……'}
             onInput={(e) => setContent((e.target as HTMLTextAreaElement).value)}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return;
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
                 e.preventDefault();
                 save();

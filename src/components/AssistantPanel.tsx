@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
+import { isImeComposing } from '../lib/ime';
 import type { Asset, AssistantMessage, AssistantMode, Kind, Project } from '../lib/types';
 import { KINDS } from '../lib/types';
 import { Button, ConfirmDialog, IconButton, InlineError } from './ui';
@@ -429,7 +430,7 @@ export function AssistantPanel({
               aria-label="给项目助手的消息"
               onInput={(e) => setInput((e.target as HTMLTextAreaElement).value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !(e as unknown as { isComposing?: boolean }).isComposing) {
+                if (e.key === 'Enter' && !e.shiftKey && !isImeComposing(e)) {
                   e.preventDefault();
                   send();
                 }

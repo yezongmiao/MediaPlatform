@@ -7,6 +7,7 @@ import { AssetCard } from '../components/AssetCard';
 import { AssistantPanel } from '../components/AssistantPanel';
 import { AssetEditor } from '../components/AssetEditor';
 import { CardStudio } from '../components/CardStudio';
+import { AiCardStudio } from '../components/AiCardStudio';
 import { GenerateDialog } from '../components/GenerateDialog';
 import { ProjectSettings } from '../components/ProjectSettings';
 import { Icon } from '../components/Icon';
@@ -37,6 +38,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const [generateKind, setGenerateKind] = useState<Kind>('article');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
+  const [aiCardOpen, setAiCardOpen] = useState(false);
   const [cardInitialText, setCardInitialText] = useState('');
   const [vscodeLoading, setVscodeLoading] = useState(false);
   const [vscodeFallback, setVscodeFallback] = useState<VscodeFallback | null>(null);
@@ -466,9 +468,14 @@ export function ProjectPage({ projectId }: { projectId: string }) {
                 </Button>
               ) : null}
               {activeKind!.id === 'card' ? (
-                <Button variant="secondary" icon="cards" onClick={() => openCardStudio('')}>
-                  制作文卡图
-                </Button>
+                <>
+                  <Button variant="secondary" icon="cards" onClick={() => openCardStudio('')}>
+                    制作文卡图
+                  </Button>
+                  <Button variant="primary" icon="spark" onClick={() => setAiCardOpen(true)}>
+                    AI 文卡图
+                  </Button>
+                </>
               ) : null}
               {activeKind!.upload ? (
                 <Button variant="secondary" icon="upload" loading={uploading && uploadKind === activeKind!.id} onClick={() => triggerUpload(activeKind!.id)}>
@@ -546,6 +553,20 @@ export function ProjectPage({ projectId }: { projectId: string }) {
         open={cardOpen}
         initialText={cardInitialText}
         onClose={() => setCardOpen(false)}
+        onSaved={async (assetId) => {
+          const data = await refresh();
+          setTab('card');
+          if (data) {
+            const found = (data.assets.card ?? []).find((asset) => asset.id === assetId);
+            if (found) openAsset(found);
+          }
+        }}
+      />
+
+      <AiCardStudio
+        project={project}
+        open={aiCardOpen}
+        onClose={() => setAiCardOpen(false)}
         onSaved={async (assetId) => {
           const data = await refresh();
           setTab('card');

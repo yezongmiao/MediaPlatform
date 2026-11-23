@@ -2,7 +2,24 @@
 import fs from 'node:fs';
 
 const prompt = fs.readFileSync(0, 'utf8').trim();
+const cardPlan = prompt.includes('MEDIADESK_CARD_PROTOCOL');
 const assistant = prompt.includes('MEDIADESK_ASSISTANT_PROTOCOL');
+
+if (cardPlan) {
+  process.stdout.write(JSON.stringify({
+    kicker: '2026 · 11',
+    page: '01 / 01',
+    title: '把结论放到第一屏',
+    body: [
+      '读者不需要先看你如何抵达，才决定要不要继续读。',
+      '先给出判断，再解释理由；卡片只保留一句值得记住的话。',
+    ],
+    footnote: '图注｜先写下来，再慢慢变好',
+    source: '来源｜E2E 卡片测试',
+    imagePrompt: '一张无文字的编辑式桌面照片，纸张、铅笔和晨光，克制的米色与深绿。',
+  }));
+  process.exit(0);
+}
 
 if (assistant) {
   const match = prompt.match(/assetId:\s*([A-Z0-9]+)/);

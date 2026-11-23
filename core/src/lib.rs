@@ -1,6 +1,7 @@
 pub mod api;
 pub mod assets;
 pub mod assistant;
+pub mod card_gen;
 pub mod cli;
 pub mod context;
 pub mod error;

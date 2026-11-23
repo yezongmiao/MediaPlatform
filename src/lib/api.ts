@@ -5,6 +5,7 @@ import type {
   AssistantHistory,
   AssistantStreamEvent,
   BrowseInfo,
+  CardPlanResponse,
   CliConfig,
   ConfigView,
   GenerateRequest,
@@ -216,6 +217,11 @@ export const api = {
     jsonRequest<ConfigView>('/api/config/media', 'PUT', payload),
   previewPrompt: (payload: GenerateRequest) =>
     jsonRequest<PromptResult>('/api/llm/prompt', 'POST', payload),
+  generateCardPlan: (
+    projectId: string,
+    payload: { sourceAssetId?: string; instruction: string; withImage: boolean },
+  ) =>
+    jsonRequest<CardPlanResponse>(`/api/projects/${projectId}/card/plan`, 'POST', payload),
   generate: (payload: GenerateRequest) =>
     jsonRequest<GenerateResult>('/api/llm/generate', 'POST', payload),
 

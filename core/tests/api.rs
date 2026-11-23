@@ -1106,6 +1106,60 @@ async fn assistant_suggests_and_applies_asset_edits() {
 }
 
 #[tokio::test]
+async fn card_plan_generates_structured_editorial_content() {
+    let server = TestServer::spawn().await;
+    let project = server.create_project("AI 文卡图项目", vec![]).await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let (status, article) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/assets"),
+            Some(json!({
+                "kind": "article",
+                "title": "写作结构",
+                "content": "# 写作结构\n\n读者不需要先看你如何抵达，才决定要不要继续读。先给结论，再解释理由。"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{article}");
+    let article_id = article["id"].as_str().unwrap().to_string();
+    let cli_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-card-cli.sh");
+    let (status, _) = server
+        .call(
+            "PUT",
+            "/api/config/kernel",
+            Some(json!({
+                "kernel": "claude",
+                "binary": cli_path.to_string_lossy(),
+                "args": [],
+                "timeoutSecs": 60
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, plan) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/card/plan"),
+            Some(json!({
+                "sourceAssetId": article_id,
+                "instruction": "突出结论前置",
+                "withImage": false
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{plan}");
+    assert_eq!(plan["plan"]["title"], "把结论放到第一屏");
+    assert_eq!(plan["plan"]["body"].as_array().unwrap().len(), 2);
+    assert_eq!(plan["plan"]["kicker"], "2026 · 11");
+    assert_eq!(plan["model"], "claude-cli");
+    assert!(plan["imageUrl"].is_null());
+    assert!(plan["imageWarning"].is_null());
+}
+
+#[tokio::test]
 async fn assistant_api_streams_sse_events() {
     let server = TestServer::spawn().await;
     let project = server.create_project("API 流式项目", vec![]).await;
