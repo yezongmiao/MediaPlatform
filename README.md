@@ -185,7 +185,7 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 npm run typecheck      # TypeScript
 npm test               # Vitest 纯函数测试
 cargo test --workspace --exclude mediadesk-desktop
-npm run e2e            # Playwright：真实 Rust 服务 + mock LLM + fake code CLI
+npm run e2e            # Playwright：真实 Rust 服务 + mock LLM/媒体 + mock CLI + fake code CLI
 cargo clippy -p mediadesk-core -p mediadesk-server --all-targets -- -D warnings
 ```
 
