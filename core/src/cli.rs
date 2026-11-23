@@ -12,6 +12,7 @@ use crate::models::{CliConfig, Config, KernelInfo, KernelStatus};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kernel {
     Claude,
+    Codex,
     Opencode,
     Deepseek,
 }
@@ -20,6 +21,7 @@ impl Kernel {
     pub fn from_id(id: &str) -> Option<Self> {
         match id {
             "claude" => Some(Self::Claude),
+            "codex" => Some(Self::Codex),
             "opencode" => Some(Self::Opencode),
             "deepseek" => Some(Self::Deepseek),
             _ => None,
@@ -29,6 +31,7 @@ impl Kernel {
     pub fn id(self) -> &'static str {
         match self {
             Self::Claude => "claude",
+            Self::Codex => "codex",
             Self::Opencode => "opencode",
             Self::Deepseek => "deepseek",
         }
@@ -37,6 +40,7 @@ impl Kernel {
     pub fn label(self) -> &'static str {
         match self {
             Self::Claude => "Claude Code",
+            Self::Codex => "Codex CLI",
             Self::Opencode => "OpenCode",
             Self::Deepseek => "DeepSeek CLI",
         }
@@ -45,6 +49,7 @@ impl Kernel {
     fn binary_names(self) -> &'static [&'static str] {
         match self {
             Self::Claude => &["claude"],
+            Self::Codex => &["codex"],
             Self::Opencode => &["opencode"],
             Self::Deepseek => &["deepseek"],
         }
@@ -54,6 +59,8 @@ impl Kernel {
         match self {
             // Claude Code print mode reads the prompt from stdin.
             Self::Claude => &["-p"],
+            // Codex exec runs non-interactively and accepts the prompt as an argument.
+            Self::Codex => &["exec", "{prompt}"],
             // `opencode run` receives the prompt on stdin when no message arg is given.
             Self::Opencode => &["run"],
             Self::Deepseek => &[],
@@ -64,6 +71,9 @@ impl Kernel {
         match self {
             Self::Claude => {
                 "安装 Claude Code：npm install -g @anthropic-ai/claude-code；或在设置中填写可执行文件路径。"
+            }
+            Self::Codex => {
+                "安装 Codex CLI：npm install -g @openai/codex；或在设置中填写可执行文件路径。"
             }
             Self::Opencode => {
                 "安装 OpenCode：npm install -g opencode-ai；或在设置中填写可执行文件路径。"
@@ -128,19 +138,24 @@ fn resolve(cli: &CliConfig, kernel: Kernel) -> Option<PathBuf> {
 
 pub fn status(config: &Config) -> KernelStatus {
     let env_override = env_override().is_some();
-    let kernels = [Kernel::Claude, Kernel::Opencode, Kernel::Deepseek]
-        .into_iter()
-        .map(|kernel| {
-            let path = resolve(&config.cli, kernel);
-            KernelInfo {
-                id: kernel.id().to_string(),
-                label: kernel.label().to_string(),
-                found: path.is_some(),
-                path: path.map(|p| p.to_string_lossy().to_string()),
-                install_hint: kernel.install_hint().to_string(),
-            }
-        })
-        .collect();
+    let kernels = [
+        Kernel::Claude,
+        Kernel::Codex,
+        Kernel::Opencode,
+        Kernel::Deepseek,
+    ]
+    .into_iter()
+    .map(|kernel| {
+        let path = resolve(&config.cli, kernel);
+        KernelInfo {
+            id: kernel.id().to_string(),
+            label: kernel.label().to_string(),
+            found: path.is_some(),
+            path: path.map(|p| p.to_string_lossy().to_string()),
+            install_hint: kernel.install_hint().to_string(),
+        }
+    })
+    .collect();
     KernelStatus {
         selected: config.text_kernel.clone(),
         env_override,

@@ -25,6 +25,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::library;
 use crate::llm;
 use crate::models::*;
+use crate::providers;
 use crate::store;
 use crate::ui;
 
@@ -105,6 +106,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/config/kernel", put(put_kernel_config))
         .route("/api/config/media", put(put_media_config))
         .route("/api/cli/status", get(cli_status))
+        .route("/api/llm/providers", get(llm_providers))
+        .route("/api/llm/models", post(llm_models))
         .route("/api/llm/test", post(test_llm))
         .route("/api/llm/prompt", post(preview_prompt))
         .route("/api/llm/generate", post(generate))
@@ -245,7 +248,7 @@ async fn put_kernel_config(
     Json(update): Json<TextKernelUpdate>,
 ) -> ApiResult<Json<ConfigView>> {
     let kernel = update.kernel.trim();
-    if !["api", "claude", "opencode", "deepseek"].contains(&kernel) {
+    if !["api", "claude", "codex", "opencode", "deepseek"].contains(&kernel) {
         return Err(ApiError::bad_request("不支持的文本内核"));
     }
     if !(10..=1800).contains(&update.timeout_secs) {
@@ -340,6 +343,35 @@ async fn put_config(
     let workspace = state.workspace();
     let mut config = store::load_config(&workspace).await?;
     validate_base_url(&update.base_url)?;
+    let previous_base = config.llm.base_url.clone();
+    let previous_provider = config.llm.provider_id.clone();
+    if let Some(provider_id) = update
+        .provider_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        if providers::get(provider_id).is_none() {
+            return Err(ApiError::bad_request(format!(
+                "未知的服务商：{provider_id}"
+            )));
+        }
+        config.llm.provider_id = provider_id.to_string();
+    }
+    if let Some(protocol) = update
+        .protocol
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        if providers::Protocol::from_id(protocol).is_none() {
+            return Err(ApiError::bad_request(
+                "协议必须是 openai / anthropic / responses",
+            ));
+        }
+        config.llm.protocol = protocol.to_ascii_lowercase();
+    }
+    config.llm.custom_headers = providers::validate_custom_headers(&update.custom_headers)?;
     if update.model.trim().is_empty() {
         return Err(ApiError::bad_request("模型名称不能为空"));
     }
@@ -353,6 +385,12 @@ async fn put_config(
         return Err(ApiError::bad_request("超时时间必须在 5–600 秒之间"));
     }
     config.llm.base_url = update.base_url.trim().trim_end_matches('/').to_string();
+    if update.api_key.is_none()
+        && (config.llm.provider_id != previous_provider
+            || config.llm.base_url.trim_end_matches('/') != previous_base.trim_end_matches('/'))
+    {
+        config.llm.api_key.clear();
+    }
     config.llm.model = update.model.trim().to_string();
     config.llm.temperature = update.temperature;
     config.llm.max_tokens = update.max_tokens;
@@ -691,6 +729,21 @@ async fn generate(
 ) -> ApiResult<Json<GenerateResult>> {
     Ok(Json(
         llm::generate(&state.workspace(), &state.client, req).await?,
+    ))
+}
+
+async fn llm_providers() -> Json<Vec<providers::ProviderSpec>> {
+    Json(providers::catalog())
+}
+
+async fn llm_models(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<ModelListRequest>,
+) -> ApiResult<Json<ModelListResponse>> {
+    let workspace = state.workspace();
+    let config = store::load_config(&workspace).await?;
+    Ok(Json(
+        llm::list_models(&state.client, &config.llm, request).await?,
     ))
 }
 

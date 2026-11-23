@@ -431,3 +431,35 @@ test('media generation saves an illustration into the project', async ({ page, r
   await dialog.getByRole('button', { name: '查看并编辑' }).click();
   await expect(page.getByRole('dialog').locator('.asset-editor')).toBeVisible();
 });
+
+
+test('provider catalog: accordion and model list', async ({ page }) => {
+  await page.goto('/settings');
+  const card = page.locator('.settings-card').filter({ hasText: '大模型接入' });
+  await expect(card.locator('.provider-row')).toHaveCount(12);
+  await expect(card.locator('.provider-panel')).toHaveCount(1);
+
+  await card.locator('.provider-row').filter({ hasText: 'OpenRouter' }).click();
+  await expect(card.locator('.provider-panel')).toHaveCount(1);
+  await expect(card.locator('.provider-entry.is-open')).toContainText('OpenRouter');
+
+  const openEntry = card.locator('.provider-entry.is-open');
+  const inputs = openEntry.locator('.settings-form-grid').first().locator('input.input');
+  await inputs.nth(0).fill(MOCK_URL);
+  await openEntry.getByRole('button', { name: '获取列表' }).click();
+  await expect(openEntry.locator('.model-option')).toHaveCount(2);
+  await page.waitForTimeout(350);
+  await page.screenshot({ path: path.join(SHOTS, '14-providers.png'), fullPage: false });
+  await openEntry.locator('.model-option').filter({ hasText: 'Mock Model 2' }).click();
+  await expect(inputs.nth(1)).toHaveValue('mock-model-2');
+
+  await card.locator('.provider-row').filter({ hasText: 'OpenRouter' }).click();
+  await expect(card.locator('.provider-panel')).toHaveCount(0);
+
+  await card.locator('.provider-row').filter({ hasText: 'Kimi' }).click();
+  await expect(card.locator('.provider-panel')).toHaveCount(1);
+  await expect(card.locator('.provider-entry.is-open')).toContainText('Kimi');
+  await card.getByLabel('搜索服务商').fill('Claude');
+  await expect(card.locator('.provider-row')).toHaveCount(1);
+  await expect(card.locator('.provider-row')).toContainText('Claude');
+});

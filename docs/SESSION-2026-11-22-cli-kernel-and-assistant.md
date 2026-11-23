@@ -48,7 +48,7 @@
 | ② 插图/视频媒体生成 | 完成 | 图像 OpenAI Images 兼容；视频 `openai` / `task` / `seedance` 协议；URL/base64 解析、轮询、落盘、sidecar、提示词快照 |
 | ③ 项目助手 | 完成 | 会话历史持久化、建议/覆盖模式、JSON 编辑协议、复用 `assets::update_asset`、项目页右侧会话栏 |
 
-验证命令：`npm run check`、`cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings`、`npm run e2e`。当前测试规模：Rust 6 unit + 13 integration，Vitest 12，Playwright 5。
+验证命令：`npm run check`、`cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings`、`npm run e2e`。当前测试规模：Rust 10 unit + 14 integration，Vitest 12，Playwright 6。
 
 ## 3. 本会话已完成的部分
 

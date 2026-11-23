@@ -13,6 +13,7 @@ const KERNEL_OPTIONS: {
 }[] = [
   { id: 'api', label: 'API 大模型', description: '走下方 OpenAI 兼容接口', icon: 'spark' },
   { id: 'claude', label: 'Claude Code', description: '本机 claude CLI', icon: 'code' },
+  { id: 'codex', label: 'Codex CLI', description: '本机 codex CLI', icon: 'code' },
   { id: 'opencode', label: 'OpenCode', description: '本机 opencode CLI', icon: 'sliders' },
   { id: 'deepseek', label: 'DeepSeek CLI', description: '本机 deepseek CLI', icon: 'book' },
 ];
@@ -150,7 +151,7 @@ export function TextKernelSettings() {
               class="textarea kernel-args"
               rows={3}
               value={argsText}
-              placeholder={kernel === 'claude' ? '-p' : kernel === 'opencode' ? 'run' : ''}
+              placeholder={kernel === 'claude' ? '-p' : kernel === 'codex' ? 'exec' : kernel === 'opencode' ? 'run' : ''}
               onInput={(e) => setArgsText((e.target as HTMLTextAreaElement).value)}
             />
           </Field>

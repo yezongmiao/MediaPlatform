@@ -10,7 +10,8 @@
 
 - **灵感收件箱**：`⌘N` 随时速记，标题、正文、标签都是普通 Markdown 文件。
 - **从想法立项**：项目独立成页，自动生成文章、脚本、插图、文卡图、视频五类目录。
-- **文本内核可切换**：文章、脚本、文卡图可走 OpenAI 兼容 API，也可调用本机 `claude` / `opencode` / `deepseek` CLI；提示词与结果仍可预览、快照。
+- **服务商目录与模型列表**：Claude / Codex / OpenCode Go / 字节方舟 / 小米 / OpenRouter / Kimi / MiniMax / DeepSeek / Ollama / 自定义；折叠列表、真实 `/models` 获取、特殊请求头自动处理。
+- **文本内核可切换**：文章、脚本、文卡图可走 API，也可调用本机 `claude` / `codex` / `opencode` / `deepseek` CLI；提示词与结果仍可预览、快照。
 - **媒体模型直连**：插图走 OpenAI Images 兼容接口，视频支持 OpenAI / 通用 task / Seedance 任务协议，成功后直接落进项目素材库。
 - **项目助手右侧栏**：与素材同屏对话，助手读取项目与素材，支持「建议式」与「覆盖式」改稿。
 - **VSCode 协作**：一键生成 `AGENTS.md`、`CLAUDE.md`、技能/预设副本、`.vscode/` 与机器可读上下文，并调用 `code` 打开项目。
@@ -35,7 +36,11 @@
 |---|---|
 | ![项目助手](docs/screenshots/assistant.png) | ![媒体生成](docs/screenshots/media-generate.png) |
 
-桌面原生窗口（Tauri 2 + 系统 WKWebView，安装包 3.5MB）：
+| 服务商与模型列表 |
+|---|
+| ![服务商](docs/screenshots/providers.png) |
+
+桌面原生窗口（Tauri 2 + 系统 WKWebView，安装包 3.56MB）：
 
 ![原生窗口](docs/screenshots/native.png)
 
@@ -83,9 +88,9 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `release/媒材工坊_0.2.1_aarch64.dmg` | 拖入 Applications 的安装包 | 3.51 MB |
-| `release/媒材工坊_0.2.1_aarch64.app.zip` | 免安装应用 | 3.1 MB |
-| `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.2 MB |
+| `release/媒材工坊_0.3.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.56 MB |
+| `release/媒材工坊_0.3.0_aarch64.app.zip` | 免安装应用 | 3.12 MB |
+| `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.26 MB |
 
 实测：浏览器服务空载 RSS ≈ 8.6MB，冷启动 0.1–0.6s；原生主进程空载约 35MB、打开工作台约 95MB（系统 WKWebView，进程另计）。完整数据见 [验收记录](docs/ACCEPTANCE.md)。
 
@@ -114,6 +119,7 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 |---|---|
 | API 大模型 | 使用「大模型接入」里的 OpenAI-compatible Chat Completions 接口 |
 | Claude Code | 调用本机 `claude` CLI，stdin 传完整提示词 |
+| Codex CLI | 调用本机 `codex exec {prompt}` |
 | OpenCode | 调用本机 `opencode` CLI |
 | DeepSeek CLI | 调用本机 `deepseek` CLI |
 
@@ -122,14 +128,35 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 - 默认参数因内核而异（如 Claude 用 `-p`）；可在「附加参数」里修改，支持 `{prompt}` 占位符。
 - 本机未安装 CLI 时，切换到 API 即可继续使用；插图和视频始终走媒体模型。
 
-「设置 → 大模型接入」支持任意 OpenAI-compatible Chat Completions 服务，内置 DeepSeek / OpenAI / Moonshot / Ollama 快捷配置：
+## 服务商与模型列表
 
-- Base URL 通常以 `/v1` 结尾；
-- 模型名可自由填写；
-- API Key 保存在本机，前端只看到「是否已配置」，接口不会回传明文；
-- 「测试连接」会真实发起一次最小请求；
-- 本地 Ollama（`http://localhost:11434/v1`）可以不填 Key；
-- 没有 Key 或断网时，仍可「预览/复制提示词」，把上下文带去任意模型。
+「设置 → 大模型接入」是**折叠列表**：默认只显示服务商名称，点击一项才展开 Base URL、Key、模型与高级选项，避免一屏堆满所有厂商。
+
+内置服务商：
+
+| 服务商 | 协议 / 特殊处理 |
+|---|---|
+| DeepSeek | OpenAI Chat；官方 `/models` |
+| Claude / Claude Code | Anthropic Messages；`x-api-key` + `anthropic-version: 2023-06-01` |
+| Codex / OpenAI | OpenAI Responses（`/responses`），适合 Codex 模型 |
+| OpenAI | 标准 Chat Completions |
+| OpenCode Go | **自动附加 `x-opencode-session`**，避免 `MissingSessionID`；固定 Base URL 为 `/inference/go/openai/v1` |
+| 字节 · 火山方舟 | OpenAI 兼容；模型 ID 或推理接入点 `ep-...` |
+| 小米 MiMo | OpenAI 兼容；`api.xiaomimimo.com/v1` |
+| OpenRouter | OpenAI 兼容；自动附加 `HTTP-Referer` / `X-Title` |
+| Kimi | OpenAI 兼容；`api.moonshot.cn/v1` |
+| MiniMax | OpenAI 兼容；国际站 `api.minimaxi.com/v1`，国内站可改 `api.minimax.chat/v1` |
+| Ollama 本地 | 无需 Key |
+| 自定义服务 | 可选 OpenAI / Anthropic / Responses 协议，自定义请求头 |
+
+- 每个服务商行可展开/收起；同一时间只展开一个。支持搜索过滤。
+- 展开后点「获取列表」会通过本地 Rust 服务请求服务商的 `/models`，归一化后以可搜索列表展示；模型名可手动修改。
+- 模型列表请求同样会带上服务商特殊 header；Key 不会进入前端 URL 或日志。
+- OpenCode Go 已用真实接口验证：模型列表可获取；带无效 Key 时返回 401 `Invalid credential`，不再出现 `MissingSessionID`。
+- 切换服务商会清空当前输入框中的 Key，避免把上一家的 Key 发到别家；保存后 API Key 仍只保存在本机。
+- 「测试连接」会按当前协议真实发一次最小请求。
+
+![服务商折叠列表与模型获取](docs/screenshots/providers.png)
 
 ## 媒体生成
 
@@ -189,13 +216,15 @@ npm run e2e            # Playwright：真实 Rust 服务 + mock LLM/媒体 + moc
 cargo clippy -p mediadesk-core -p mediadesk-server --all-targets -- -D warnings
 ```
 
-E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 文卡图导出 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；切换工作区；CLI 文本内核 → 项目助手覆盖式改稿；媒体生成并落盘。
+E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 文卡图导出 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；切换工作区；CLI 文本内核 → 项目助手覆盖式改稿；媒体生成并落盘；服务商折叠、模型列表获取与搜索。
 
 更多： [架构设计](docs/ARCHITECTURE.md) · [实施计划](docs/superpowers/plans/2026-11-20-media-desk.md) · [验收记录](docs/ACCEPTANCE.md)
 
 ## 已知边界
 
-- 本机没有安装 `claude` / `opencode` / `deepseek` CLI 时，CLI 内核会明确报错；测试使用 mock CLI，未对真实第三方 CLI 的每一种参数组合做验收。
+- 本机安装的 `claude` 已检测到，但未用真实账号发起生成；`opencode` / `codex` / `deepseek` CLI 是否安装取决于机器，未安装时会明确报错。CLI 测试使用 mock CLI，未对真实第三方 CLI 的每一种参数组合做验收。
+- 服务商模型列表接口已对 OpenRouter / OpenCode Go 做真实网络验证；其他厂商使用通用 `/models` 解析，需要用户自己的 Key，未逐一用真实账号验证。
+- Anthropic Messages 与 OpenAI Responses 协议通过本地 mock 验证，未用真实付费账号发起请求。
 - 媒体接口的兼容范围是 OpenAI Images、OpenAI Videos、通用 task 与 Seedance；不同厂商的额外字段/签名方式可能需要通过创建路径和风格适配。
 - 项目助手不是实时流式对话；每次请求完成后再返回，超时取决于 CLI/模型配置。
 - 当前 macOS 构建为 Apple Silicon（arm64）；未提供 Intel / universal 包。

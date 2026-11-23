@@ -9,6 +9,7 @@ pub mod library;
 pub mod llm;
 pub mod media_gen;
 pub mod models;
+pub mod providers;
 pub mod seed;
 pub mod store;
 pub mod ui;

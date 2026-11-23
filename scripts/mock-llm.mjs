@@ -27,6 +27,17 @@ export function startMockLlm(port = 4391) {
       return;
     }
 
+    if (req.method === 'GET' && url === '/v1/models') {
+      sendJson(res, 200, {
+        object: 'list',
+        data: [
+          { id: 'mock-e2e-model', name: 'Mock E2E Model' },
+          { id: 'mock-model-2', name: 'Mock Model 2' },
+        ],
+      });
+      return;
+    }
+
     if (req.method === 'GET' && url === '/v1/videos/e2e-task-1') {
       sendJson(res, 200, {
         id: 'e2e-task-1',

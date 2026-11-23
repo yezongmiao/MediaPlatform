@@ -10,6 +10,9 @@ import type {
   Idea,
   Kind,
   KernelStatus,
+  ModelListResponse,
+  ProviderSpec,
+  RequestHeader,
   LlmTestResult,
   MediaProfileView,
   Preset,
@@ -132,21 +135,35 @@ function jsonRequest<T>(path: string, method: string, body?: unknown): Promise<T
 }
 
 export interface LlmConfigPayload {
+  providerId: string;
   baseUrl: string;
   model: string;
   temperature: number;
   maxTokens: number;
   timeoutSecs: number;
   apiKey?: string;
+  protocol: string;
+  customHeaders: RequestHeader[];
 }
 
 export interface TestLlmPayload {
+  providerId?: string;
   baseUrl?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
   timeoutSecs?: number;
   apiKey?: string;
+  protocol?: string;
+  customHeaders?: RequestHeader[];
+}
+
+export interface ModelListPayload {
+  providerId: string;
+  baseUrl: string;
+  apiKey?: string;
+  protocol?: string;
+  customHeaders: RequestHeader[];
 }
 
 export interface KernelConfigPayload {
@@ -186,6 +203,9 @@ export const api = {
 
   getConfig: () => request<ConfigView>('/api/config'),
   saveConfig: (payload: LlmConfigPayload) => jsonRequest<ConfigView>('/api/config', 'PUT', payload),
+  listProviders: () => request<ProviderSpec[]>('/api/llm/providers'),
+  listModels: (payload: ModelListPayload) =>
+    jsonRequest<ModelListResponse>('/api/llm/models', 'POST', payload),
   testLlm: (payload: TestLlmPayload) => jsonRequest<LlmTestResult>('/api/llm/test', 'POST', payload),
   saveKernelConfig: (payload: KernelConfigPayload) =>
     jsonRequest<ConfigView>('/api/config/kernel', 'PUT', payload),

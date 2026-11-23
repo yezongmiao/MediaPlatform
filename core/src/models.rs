@@ -35,6 +35,14 @@ fn default_version() -> u32 {
     1
 }
 
+fn default_provider_id() -> String {
+    "deepseek".into()
+}
+
+fn default_protocol() -> String {
+    "openai".into()
+}
+
 fn default_text_kernel() -> String {
     "api".into()
 }
@@ -325,9 +333,18 @@ pub struct Preset {
 // Config & workspace
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestHeader {
+    pub name: String,
+    pub value: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmConfig {
+    #[serde(default = "default_provider_id")]
+    pub provider_id: String,
     #[serde(default = "default_base_url")]
     pub base_url: String,
     #[serde(default)]
@@ -340,17 +357,24 @@ pub struct LlmConfig {
     pub max_tokens: u32,
     #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+    #[serde(default)]
+    pub custom_headers: Vec<RequestHeader>,
 }
 
 impl Default for LlmConfig {
     fn default() -> Self {
         Self {
+            provider_id: default_provider_id(),
             base_url: default_base_url(),
             api_key: String::new(),
             model: default_model(),
             temperature: default_temperature(),
             max_tokens: default_max_tokens(),
             timeout_secs: default_timeout_secs(),
+            protocol: default_protocol(),
+            custom_headers: Vec::new(),
         }
     }
 }
@@ -566,12 +590,15 @@ impl Default for Config {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmConfigView {
+    pub provider_id: String,
     pub base_url: String,
     pub model: String,
     pub temperature: f32,
     pub max_tokens: u32,
     pub timeout_secs: u64,
     pub has_api_key: bool,
+    pub protocol: String,
+    pub custom_headers: Vec<RequestHeader>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -588,6 +615,8 @@ pub struct ConfigView {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmConfigUpdate {
+    #[serde(default)]
+    pub provider_id: Option<String>,
     pub base_url: String,
     /// Omit to keep the stored key; empty string clears it.
     pub api_key: Option<String>,
@@ -595,17 +624,24 @@ pub struct LlmConfigUpdate {
     pub temperature: f32,
     pub max_tokens: u32,
     pub timeout_secs: u64,
+    #[serde(default)]
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub custom_headers: Vec<RequestHeader>,
 }
 
 impl From<&LlmConfig> for LlmConfigView {
     fn from(c: &LlmConfig) -> Self {
         Self {
+            provider_id: c.provider_id.clone(),
             base_url: c.base_url.clone(),
             model: c.model.clone(),
             temperature: c.temperature,
             max_tokens: c.max_tokens,
             timeout_secs: c.timeout_secs,
             has_api_key: !c.api_key.trim().is_empty(),
+            protocol: c.protocol.clone(),
+            custom_headers: c.custom_headers.clone(),
         }
     }
 }
@@ -861,15 +897,49 @@ pub struct AssistantChatResponse {
     pub messages: Vec<AssistantMessage>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelListResponse {
+    pub provider_id: String,
+    pub models: Vec<ModelInfo>,
+    pub fetched: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub docs_url: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TestLlmRequest {
+    pub provider_id: Option<String>,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<u32>,
     pub timeout_secs: Option<u64>,
+    pub protocol: Option<String>,
+    pub custom_headers: Option<Vec<RequestHeader>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelListRequest {
+    pub provider_id: String,
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub protocol: Option<String>,
+    #[serde(default)]
+    pub custom_headers: Vec<RequestHeader>,
 }
 
 #[derive(Clone, Debug, Serialize)]

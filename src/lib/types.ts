@@ -171,16 +171,55 @@ export interface Preset {
   content: string;
 }
 
+export interface RequestHeader {
+  name: string;
+  value: string;
+}
+
 export interface LlmConfigView {
+  providerId: string;
   baseUrl: string;
   model: string;
   temperature: number;
   maxTokens: number;
   timeoutSecs: number;
   hasApiKey: boolean;
+  protocol: string;
+  customHeaders: RequestHeader[];
 }
 
-export type TextKernel = 'api' | 'claude' | 'opencode' | 'deepseek';
+export interface ProviderSpec {
+  id: string;
+  name: string;
+  description: string;
+  mark: string;
+  accent: string;
+  baseUrl: string;
+  protocol: string;
+  defaultModel: string;
+  modelsPath: string;
+  auth: string;
+  requiresSession: boolean;
+  note: string;
+  docsUrl: string;
+  fixedHeaders: RequestHeader[];
+  fallbackModels: string[];
+}
+
+export interface ModelInfo {
+  id: string;
+  name?: string;
+}
+
+export interface ModelListResponse {
+  providerId: string;
+  models: ModelInfo[];
+  fetched: boolean;
+  note?: string;
+  docsUrl?: string;
+}
+
+export type TextKernel = 'api' | 'claude' | 'codex' | 'opencode' | 'deepseek';
 
 export interface CliConfig {
   binary?: string;
@@ -216,7 +255,7 @@ export interface ConfigView {
 }
 
 export interface KernelInfo {
-  id: 'claude' | 'opencode' | 'deepseek';
+  id: 'claude' | 'codex' | 'opencode' | 'deepseek';
   label: string;
   found: boolean;
   path?: string;

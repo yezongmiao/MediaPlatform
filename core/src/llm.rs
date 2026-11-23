@@ -12,6 +12,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::library;
 use crate::media_gen;
 use crate::models::*;
+use crate::providers::{self, Protocol};
 use crate::store::{self, atomic_write, now_iso};
 
 const KIND_DEFAULT_INSTRUCTION: &str = "请围绕项目主题创作一条高质量素材。";
@@ -216,20 +217,6 @@ pub async fn build_prompt(
     })
 }
 
-fn chat_url(base_url: &str) -> ApiResult<String> {
-    let base = base_url.trim().trim_end_matches('/');
-    if !(base.starts_with("http://") || base.starts_with("https://")) {
-        return Err(ApiError::bad_request(
-            "Base URL 必须以 http:// 或 https:// 开头",
-        ));
-    }
-    if base.ends_with("/chat/completions") {
-        Ok(base.to_string())
-    } else {
-        Ok(format!("{base}/chat/completions"))
-    }
-}
-
 fn is_local_host(base_url: &str) -> bool {
     reqwest::Url::parse(base_url)
         .ok()
@@ -290,6 +277,174 @@ struct ChatResponse {
     usage: Option<ChatUsage>,
 }
 
+#[derive(Debug, Deserialize)]
+struct AnthropicUsage {
+    #[serde(default)]
+    input_tokens: u64,
+    #[serde(default)]
+    output_tokens: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnthropicResponse {
+    #[serde(default)]
+    content: serde_json::Value,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    usage: Option<AnthropicUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponsesUsage {
+    #[serde(default)]
+    input_tokens: u64,
+    #[serde(default)]
+    output_tokens: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponsesResponse {
+    #[serde(default)]
+    output: serde_json::Value,
+    #[serde(default)]
+    output_text: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    usage: Option<ResponsesUsage>,
+}
+
+fn collect_response_text(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::String(text) => {
+            if !text.trim().is_empty() {
+                out.push(text.clone());
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_response_text(item, out);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            if let Some(text) = map.get("text").and_then(|v| v.as_str()) {
+                if !text.trim().is_empty() {
+                    out.push(text.to_string());
+                }
+                return;
+            }
+            if let Some(content) = map.get("content") {
+                collect_response_text(content, out);
+            }
+            if let Some(output) = map.get("output") {
+                collect_response_text(output, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn parse_openai_response(body: &str, fallback_model: &str) -> ApiResult<ChatOutcome> {
+    let parsed: ChatResponse = serde_json::from_str(body).map_err(|err| {
+        ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            format!("模型响应不是有效的 OpenAI 兼容格式：{err}"),
+        )
+    })?;
+    let content = parsed
+        .choices
+        .first()
+        .map(|choice| content_to_text(&choice.message.content))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if content.is_empty() {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            "模型返回了空内容，请重试或更换模型",
+        ));
+    }
+    let usage = parsed.usage.map(|u| Usage {
+        prompt_tokens: u.prompt_tokens,
+        completion_tokens: u.completion_tokens,
+        total_tokens: u.total_tokens,
+    });
+    Ok(ChatOutcome {
+        content,
+        model: parsed.model.unwrap_or_else(|| fallback_model.to_string()),
+        usage: usage.unwrap_or_default(),
+        latency_ms: 0,
+    })
+}
+
+fn parse_anthropic_response(body: &str, fallback_model: &str) -> ApiResult<ChatOutcome> {
+    let parsed: AnthropicResponse = serde_json::from_str(body).map_err(|err| {
+        ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            format!("Claude 响应格式异常：{err}"),
+        )
+    })?;
+    let content = content_to_text(&parsed.content).trim().to_string();
+    if content.is_empty() {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            "Claude 返回了空内容，请重试或更换模型",
+        ));
+    }
+    let usage = parsed.usage.map(|u| Usage {
+        prompt_tokens: u.input_tokens,
+        completion_tokens: u.output_tokens,
+        total_tokens: u.input_tokens + u.output_tokens,
+    });
+    Ok(ChatOutcome {
+        content,
+        model: parsed.model.unwrap_or_else(|| fallback_model.to_string()),
+        usage: usage.unwrap_or_default(),
+        latency_ms: 0,
+    })
+}
+
+fn parse_responses_response(body: &str, fallback_model: &str) -> ApiResult<ChatOutcome> {
+    let parsed: ResponsesResponse = serde_json::from_str(body).map_err(|err| {
+        ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            format!("Responses API 响应格式异常：{err}"),
+        )
+    })?;
+    let content = if let Some(text) = parsed.output_text {
+        text
+    } else {
+        let mut parts = Vec::new();
+        collect_response_text(&parsed.output, &mut parts);
+        parts.join("")
+    };
+    let content = content.trim().to_string();
+    if content.is_empty() {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "LLM_REQUEST_FAILED",
+            "Responses API 返回了空内容，请重试或更换模型",
+        ));
+    }
+    let usage = parsed.usage.map(|u| Usage {
+        prompt_tokens: u.input_tokens,
+        completion_tokens: u.output_tokens,
+        total_tokens: u.input_tokens + u.output_tokens,
+    });
+    Ok(ChatOutcome {
+        content,
+        model: parsed.model.unwrap_or_else(|| fallback_model.to_string()),
+        usage: usage.unwrap_or_default(),
+        latency_ms: 0,
+    })
+}
+
 fn content_to_text(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(s) => s.clone(),
@@ -317,12 +472,17 @@ struct ChatOutcome {
 async fn chat_completion(
     client: &reqwest::Client,
     config: &LlmConfig,
+    session: &str,
     system: &str,
     user: &str,
     max_tokens_override: Option<u32>,
 ) -> ApiResult<ChatOutcome> {
-    let url = chat_url(&config.base_url)?;
-    if config.api_key.trim().is_empty() && !is_local_host(&config.base_url) {
+    let url = providers::chat_url(config)?;
+    let provider = providers::for_config(config);
+    if config.api_key.trim().is_empty()
+        && provider.auth != "none"
+        && !is_local_host(&config.base_url)
+    {
         return Err(ApiError::new(
             axum::http::StatusCode::PRECONDITION_FAILED,
             "LLM_NOT_CONFIGURED",
@@ -332,40 +492,58 @@ async fn chat_completion(
     if config.model.trim().is_empty() {
         return Err(ApiError::bad_request("模型名称不能为空"));
     }
+    let protocol = providers::effective_protocol(config)?;
     let timeout = Duration::from_secs(config.timeout_secs.clamp(5, 600));
-    let payload = json!({
-        "model": config.model,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user }
-        ],
-        "temperature": config.temperature.clamp(0.0, 2.0),
-        "max_tokens": max_tokens_override.unwrap_or(config.max_tokens.max(16)),
-        "stream": false
-    });
+    let max_tokens = max_tokens_override.unwrap_or(config.max_tokens.max(16));
+    let temperature = config.temperature.clamp(0.0, 2.0);
+    let payload = match protocol {
+        Protocol::OpenAi => json!({
+            "model": config.model,
+            "messages": [
+                { "role": "system", "content": system },
+                { "role": "user", "content": user }
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": false
+        }),
+        Protocol::Anthropic => json!({
+            "model": config.model,
+            "system": system,
+            "messages": [{ "role": "user", "content": user }],
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }),
+        Protocol::Responses => json!({
+            "model": config.model,
+            "instructions": system,
+            "input": user,
+            "max_output_tokens": max_tokens
+        }),
+    };
+    let headers = providers::build_headers(config, session)?;
     let started = Instant::now();
-    let mut request = client
+    let response = client
         .post(&url)
         .timeout(timeout)
-        .header("Content-Type", "application/json")
-        .json(&payload);
-    if !config.api_key.trim().is_empty() {
-        request = request.bearer_auth(config.api_key.trim());
-    }
-    let response = request.send().await.map_err(|err| {
-        let reason = if err.is_timeout() {
-            "请求超时，请检查网络或调大超时时间".to_string()
-        } else if err.is_connect() {
-            "无法连接到模型服务，请检查 Base URL 与网络".to_string()
-        } else {
-            format!("请求失败：{err}")
-        };
-        ApiError::new(
-            axum::http::StatusCode::BAD_GATEWAY,
-            "LLM_REQUEST_FAILED",
-            reason,
-        )
-    })?;
+        .headers(headers)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|err| {
+            let reason = if err.is_timeout() {
+                "请求超时，请检查网络或调大超时时间".to_string()
+            } else if err.is_connect() {
+                "无法连接到模型服务，请检查 Base URL 与网络".to_string()
+            } else {
+                format!("请求失败：{err}")
+            };
+            ApiError::new(
+                axum::http::StatusCode::BAD_GATEWAY,
+                "LLM_REQUEST_FAILED",
+                reason,
+            )
+        })?;
 
     let status = response.status();
     let body_text = response.text().await.map_err(|err| {
@@ -380,50 +558,37 @@ async fn chat_completion(
         let detail = sanitize_provider_error(&body_text, &config.api_key);
         let hint = match status.as_u16() {
             401 | 403 => "API Key 无效或没有权限",
-            404 => "接口路径不存在，请检查 Base URL（通常以 /v1 结尾）",
+            404 => "接口路径不存在，请检查 Base URL 与协议",
             429 => "触发限流或余额不足，请稍后再试",
             _ => "模型服务返回错误",
         };
+        let mut message = format!("{hint}（HTTP {}）：{}", status.as_u16(), detail);
+        if provider.id == "opencode-go"
+            && (body_text.contains("MissingSessionID") || body_text.contains("x-opencode-session"))
+        {
+            message.push_str(
+                "\n\nOpenCode Go 要求 x-opencode-session。MediaDesk 已自动附加；如果使用代理，请确认代理没有剥离该请求头。",
+            );
+        }
         return Err(ApiError::new(
             axum::http::StatusCode::BAD_GATEWAY,
             "LLM_REQUEST_FAILED",
-            format!("{hint}（HTTP {}）：{}", status.as_u16(), detail),
+            message,
         )
-        .with_details(json!({ "status": status.as_u16() })));
+        .with_details(json!({
+            "status": status.as_u16(),
+            "providerId": provider.id,
+            "protocol": protocol.id()
+        })));
     }
 
-    let parsed: ChatResponse = serde_json::from_str(&body_text).map_err(|err| {
-        ApiError::new(
-            axum::http::StatusCode::BAD_GATEWAY,
-            "LLM_REQUEST_FAILED",
-            format!("模型响应不是有效的 OpenAI 兼容格式：{err}"),
-        )
-    })?;
-    let content = parsed
-        .choices
-        .first()
-        .map(|c| content_to_text(&c.message.content))
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if content.is_empty() {
-        return Err(ApiError::new(
-            axum::http::StatusCode::BAD_GATEWAY,
-            "LLM_REQUEST_FAILED",
-            "模型返回了空内容，请重试或更换模型",
-        ));
-    }
-    let usage = parsed.usage.map(|u| Usage {
-        prompt_tokens: u.prompt_tokens,
-        completion_tokens: u.completion_tokens,
-        total_tokens: u.total_tokens,
-    });
-    Ok(ChatOutcome {
-        content,
-        model: parsed.model.unwrap_or_else(|| config.model.clone()),
-        usage: usage.unwrap_or_default(),
-        latency_ms: started.elapsed().as_millis() as u64,
-    })
+    let mut outcome = match protocol {
+        Protocol::OpenAi => parse_openai_response(&body_text, &config.model)?,
+        Protocol::Anthropic => parse_anthropic_response(&body_text, &config.model)?,
+        Protocol::Responses => parse_responses_response(&body_text, &config.model)?,
+    };
+    outcome.latency_ms = started.elapsed().as_millis() as u64;
+    Ok(outcome)
 }
 
 pub(crate) async fn save_snapshot(
@@ -467,8 +632,20 @@ async fn generate_api(
     config: &Config,
     compiled: PromptResult,
 ) -> ApiResult<GenerateResult> {
-    let outcome =
-        chat_completion(client, &config.llm, &compiled.system, &compiled.user, None).await?;
+    let session = req
+        .project_id
+        .as_deref()
+        .map(|project| format!("mediadesk-{project}-{}", req.kind))
+        .unwrap_or_else(|| format!("mediadesk-quick-{}", req.kind));
+    let outcome = chat_completion(
+        client,
+        &config.llm,
+        &session,
+        &compiled.system,
+        &compiled.user,
+        None,
+    )
+    .await?;
 
     let snapshot_path = if let Some(project_id) = req.project_id.as_deref() {
         save_snapshot(
@@ -582,6 +759,16 @@ pub async fn generate(
 
 fn merge_test_config(stored: &LlmConfig, overrides: &TestLlmRequest) -> LlmConfig {
     let mut config = stored.clone();
+    let base_before = config.base_url.clone();
+    let provider_before = config.provider_id.clone();
+    if let Some(v) = overrides
+        .provider_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        config.provider_id = v.to_string();
+    }
     if let Some(v) = overrides
         .base_url
         .as_deref()
@@ -591,9 +778,7 @@ fn merge_test_config(stored: &LlmConfig, overrides: &TestLlmRequest) -> LlmConfi
         config.base_url = v.to_string();
     }
     if let Some(v) = overrides.api_key.as_deref() {
-        if !v.trim().is_empty() {
-            config.api_key = v.trim().to_string();
-        }
+        config.api_key = v.trim().to_string();
     }
     if let Some(v) = overrides
         .model
@@ -612,7 +797,180 @@ fn merge_test_config(stored: &LlmConfig, overrides: &TestLlmRequest) -> LlmConfi
     if let Some(v) = overrides.timeout_secs {
         config.timeout_secs = v;
     }
+    if let Some(v) = overrides
+        .protocol
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        config.protocol = v.to_string();
+    }
+    if let Some(headers) = &overrides.custom_headers {
+        config.custom_headers = headers.clone();
+    }
+    if overrides.api_key.is_none()
+        && (config.provider_id != provider_before
+            || config.base_url.trim_end_matches('/') != base_before.trim_end_matches('/'))
+    {
+        config.api_key.clear();
+    }
     config
+}
+
+fn model_list_from_value(value: &serde_json::Value) -> Vec<ModelInfo> {
+    let array = value
+        .get("data")
+        .and_then(serde_json::Value::as_array)
+        .or_else(|| value.get("models").and_then(serde_json::Value::as_array));
+    let Some(array) = array else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    let mut models = Vec::new();
+    for item in array {
+        let id = item
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| item.get("model").and_then(serde_json::Value::as_str))
+            .or_else(|| item.as_str())
+            .map(str::trim)
+            .filter(|id| !id.is_empty());
+        let Some(id) = id else {
+            continue;
+        };
+        if !seen.insert(id.to_string()) {
+            continue;
+        }
+        let name = item
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| item.get("display_name").and_then(serde_json::Value::as_str))
+            .or_else(|| item.get("displayName").and_then(serde_json::Value::as_str))
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(str::to_string);
+        models.push(ModelInfo {
+            id: id.to_string(),
+            name,
+        });
+        if models.len() >= 600 {
+            break;
+        }
+    }
+    models
+}
+
+pub async fn list_models(
+    client: &reqwest::Client,
+    stored: &LlmConfig,
+    request: ModelListRequest,
+) -> ApiResult<ModelListResponse> {
+    let provider_id = request.provider_id.trim();
+    let spec = providers::get(provider_id)
+        .ok_or_else(|| ApiError::bad_request(format!("未知的服务商：{provider_id}")))?;
+    let mut config = stored.clone();
+    let provider_changed = config.provider_id != spec.id;
+    config.provider_id = spec.id.clone();
+    config.base_url = if request.base_url.trim().is_empty() {
+        spec.base_url.clone()
+    } else {
+        request.base_url.trim().trim_end_matches('/').to_string()
+    };
+    let base_changed = config.base_url != stored.base_url.trim_end_matches('/');
+    if let Some(key) = request.api_key {
+        config.api_key = key.trim().to_string();
+    } else if provider_changed || base_changed {
+        // Never send a stored key to a provider or host the user just switched to.
+        config.api_key.clear();
+    }
+    if let Some(protocol) = request
+        .protocol
+        .as_deref()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        config.protocol = protocol.to_string();
+    }
+    config.custom_headers = request.custom_headers;
+    if config.base_url.trim().is_empty() {
+        return Err(ApiError::bad_request("请先填写 Base URL"));
+    }
+    let url = providers::models_url(&config)?;
+    let headers = providers::build_headers(&config, "mediadesk-model-list")?;
+    let response = client
+        .get(&url)
+        .timeout(Duration::from_secs(30))
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|err| {
+            ApiError::new(
+                axum::http::StatusCode::BAD_GATEWAY,
+                "MODEL_LIST_FAILED",
+                if err.is_timeout() {
+                    "获取模型列表超时，请检查网络或 Base URL".to_string()
+                } else {
+                    format!("无法连接模型服务：{err}")
+                },
+            )
+        })?;
+    let status = response.status();
+    let body = response.text().await.map_err(|err| {
+        ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "MODEL_LIST_FAILED",
+            format!("读取模型列表失败：{err}"),
+        )
+    })?;
+    if !status.is_success() {
+        let hint = match status.as_u16() {
+            401 | 403 => "API Key 无效或没有权限",
+            404 => "该服务商没有可用的 /models 列表，或路径不正确",
+            429 => "请求过于频繁，请稍后重试",
+            _ => "模型列表接口返回错误",
+        };
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "MODEL_LIST_FAILED",
+            format!(
+                "{hint}（HTTP {}）：{}",
+                status.as_u16(),
+                sanitize_provider_error(&body, &config.api_key)
+            ),
+        )
+        .with_details(json!({
+            "status": status.as_u16(),
+            "providerId": provider_id,
+            "url": url
+        })));
+    }
+    let value: serde_json::Value = serde_json::from_str(&body).map_err(|err| {
+        ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "MODEL_LIST_FAILED",
+            format!("模型列表不是有效 JSON：{err}"),
+        )
+    })?;
+    let models = model_list_from_value(&value);
+    if models.is_empty() {
+        return Err(ApiError::new(
+            axum::http::StatusCode::BAD_GATEWAY,
+            "MODEL_LIST_EMPTY",
+            "接口没有返回可识别的模型列表，请手动填写模型 ID。",
+        )
+        .with_details(json!({ "providerId": provider_id, "url": url })));
+    }
+    Ok(ModelListResponse {
+        provider_id: spec.id.clone(),
+        models,
+        fetched: true,
+        note: Some(spec.note),
+        docs_url: if spec.docs_url.is_empty() {
+            None
+        } else {
+            Some(spec.docs_url)
+        },
+    })
 }
 
 pub async fn test_connection(
@@ -625,6 +983,7 @@ pub async fn test_connection(
     let outcome = chat_completion(
         client,
         &effective,
+        "mediadesk-connection-test",
         "你是一个连接测试助手。无论收到什么，只回复 pong。",
         "ping",
         Some(16),
@@ -655,7 +1014,15 @@ pub async fn complete_text(
     max_tokens: Option<u32>,
 ) -> ApiResult<TextCompletion> {
     let config = store::load_config(workspace).await?;
-    let outcome = chat_completion(client, &config.llm, system, user, max_tokens).await?;
+    let outcome = chat_completion(
+        client,
+        &config.llm,
+        "mediadesk-assistant",
+        system,
+        user,
+        max_tokens,
+    )
+    .await?;
     Ok(TextCompletion {
         content: outcome.content,
         model: outcome.model,

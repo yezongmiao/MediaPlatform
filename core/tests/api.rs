@@ -164,7 +164,38 @@ async fn mock_llm() -> (String, tokio::task::JoinHandle<()>) {
         }))
         .into_response()
     }
-    let app = Router::new().route("/v1/chat/completions", post(handler));
+    async fn models() -> Json<Value> {
+        Json(json!({
+            "object": "list",
+            "data": [
+                {"id": "mock-model-1", "name": "Mock Model 1"},
+                {"id": "mock-model-2", "name": "Mock Model 2"}
+            ]
+        }))
+    }
+
+    async fn anthropic() -> Json<Value> {
+        Json(json!({
+            "id": "msg_mock",
+            "model": "claude-mock",
+            "content": [{"type": "text", "text": "pong"}],
+            "usage": {"input_tokens": 3, "output_tokens": 2}
+        }))
+    }
+
+    async fn responses() -> Json<Value> {
+        Json(json!({
+            "id": "resp_mock",
+            "model": "codex-mock",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": "pong"}]}],
+            "usage": {"input_tokens": 3, "output_tokens": 2}
+        }))
+    }
+    let app = Router::new()
+        .route("/v1/chat/completions", post(handler))
+        .route("/v1/models", get(models))
+        .route("/v1/messages", post(anthropic))
+        .route("/v1/responses", post(responses));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let handle = tokio::spawn(async move {
@@ -1037,6 +1068,85 @@ async fn media_generation_requires_configuration() {
         .await;
     assert_eq!(status, StatusCode::PRECONDITION_FAILED);
     assert_eq!(error["error"]["code"], "MEDIA_NOT_CONFIGURED");
+}
+
+#[tokio::test]
+async fn provider_catalog_models_and_protocols() {
+    let server = TestServer::spawn().await;
+    let (status, providers) = server.call("GET", "/api/llm/providers", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let ids: Vec<&str> = providers
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|provider| provider["id"].as_str().unwrap())
+        .collect();
+    for required in [
+        "anthropic",
+        "codex",
+        "opencode-go",
+        "volcengine",
+        "xiaomi",
+        "openrouter",
+        "kimi",
+        "minimax",
+        "custom",
+    ] {
+        assert!(ids.contains(&required), "{required} missing");
+    }
+
+    let (llm_url, _mock) = mock_llm().await;
+    let (status, models) = server
+        .call(
+            "POST",
+            "/api/llm/models",
+            Some(json!({
+                "providerId": "deepseek",
+                "baseUrl": llm_url,
+                "apiKey": "mock-key",
+                "protocol": "openai",
+                "customHeaders": []
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{models}");
+    assert_eq!(models["providerId"], "deepseek");
+    assert_eq!(models["fetched"], true);
+    assert_eq!(models["models"][0]["id"], "mock-model-1");
+
+    // Anthropic Messages protocol uses x-api-key + anthropic-version.
+    let (status, anthropic) = server
+        .call(
+            "POST",
+            "/api/llm/test",
+            Some(json!({
+                "providerId": "anthropic",
+                "baseUrl": llm_url,
+                "apiKey": "mock-anthropic-key",
+                "model": "claude-mock",
+                "protocol": "anthropic"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{anthropic}");
+    assert!(anthropic["message"].as_str().unwrap().contains("连接成功"));
+
+    // Responses protocol is selected by the Codex provider.
+    let (status, codex) = server
+        .call(
+            "POST",
+            "/api/llm/test",
+            Some(json!({
+                "providerId": "codex",
+                "baseUrl": llm_url,
+                "apiKey": "mock-codex-key",
+                "model": "codex-mock",
+                "protocol": "responses"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{codex}");
+    assert!(codex["message"].as_str().unwrap().contains("连接成功"));
 }
 
 #[tokio::test]
