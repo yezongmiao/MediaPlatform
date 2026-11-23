@@ -1193,6 +1193,108 @@ async fn assistant_stream_parses_claude_json_events() {
 }
 
 #[tokio::test]
+async fn assistant_creates_new_card_assets_in_empty_directory() {
+    let server = TestServer::spawn().await;
+    let project = server.create_project("助手新建文卡图项目", vec![]).await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let dir_name = project["dirName"].as_str().unwrap().to_string();
+    let card_dir = server.ws().join("projects").join(&dir_name).join("card");
+    assert!(card_dir.is_dir());
+    assert_eq!(
+        std::fs::read_dir(&card_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().and_then(|e| e.to_str()) == Some("md"))
+            .count(),
+        0
+    );
+
+    let cli_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-create-cli.sh");
+    let (status, _) = server
+        .call(
+            "PUT",
+            "/api/config/kernel",
+            Some(json!({
+                "kernel": "claude",
+                "binary": cli_path.to_string_lossy(),
+                "args": [],
+                "timeoutSecs": 60
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, proposed) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat"),
+            Some(json!({"message": "card 目录为空，请新建 2 张文卡图。", "mode": "suggest"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{proposed}");
+    assert_eq!(proposed["applied"], false);
+    assert_eq!(proposed["edits"].as_array().unwrap().len(), 0);
+    assert_eq!(proposed["newAssets"].as_array().unwrap().len(), 2);
+    assert_eq!(proposed["newAssets"][0]["kind"], "card");
+    assert!(proposed["newAssets"][0]["assetId"].is_null());
+    assert_eq!(
+        std::fs::read_dir(&card_dir)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().extension().and_then(|e| e.to_str()) == Some("md"))
+            .count(),
+        0
+    );
+
+    let suggestion_id = proposed["messages"][1]["id"].as_str().unwrap().to_string();
+    let (status, adopted) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat/apply"),
+            Some(json!({"messageId": suggestion_id})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{adopted}");
+    assert_eq!(adopted["applied"], true);
+    assert_eq!(adopted["messages"][1]["applied"], true);
+    assert_eq!(
+        adopted["messages"][1]["newAssets"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+
+    let md_files: Vec<_> = std::fs::read_dir(&card_dir)
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().extension().and_then(|e| e.to_str()) == Some("md"))
+        .collect();
+    assert_eq!(md_files.len(), 2);
+    let body = std::fs::read_to_string(md_files[0].path()).unwrap();
+    assert!(body.contains("kind: card"));
+    assert!(body.contains("source: llm"));
+
+    let (status, after) = server
+        .call("GET", &format!("/api/projects/{project_id}"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(after["assets"]["card"].as_array().unwrap().len(), 2);
+    let (_, history) = server
+        .call("GET", &format!("/api/projects/{project_id}/chat"), None)
+        .await;
+    assert_eq!(history["messages"][1]["applied"], true);
+    assert_eq!(
+        history["messages"][1]["newAssets"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn media_generation_requires_configuration() {
     let server = TestServer::spawn().await;
     let project = server.create_project("未配置媒体项目", vec![]).await;

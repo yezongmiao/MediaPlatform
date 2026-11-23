@@ -367,7 +367,7 @@ test('CLI text kernel and project assistant edits', async ({ page, request }) =>
   await expect(assistant).toContainText('建议修改 1 条素材', { timeout: 15_000 });
   await assistant.getByRole('button', { name: '采纳并写入' }).click();
   const adopt = page.getByRole('dialog');
-  await expect(adopt).toContainText('覆盖 1 条素材');
+  await expect(adopt).toContainText('覆盖 1 条已有素材');
   await adopt.getByRole('button', { name: '覆盖素材' }).click();
   await expect(assistant).toContainText('已更新 1 条素材', { timeout: 15_000 });
   await dismissToasts(page);
@@ -380,6 +380,44 @@ test('CLI text kernel and project assistant edits', async ({ page, request }) =>
   );
   const updated = await updatedResponse.json();
   expect(updated.content).toContain('E2E 助手改稿');
+});
+
+test('assistant creates new card assets in an empty directory', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E 助手新建文卡图', brief: '验证空 card 目录下的新建能力。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  const kernel = await request.put('/api/config/kernel', {
+    data: { kernel: 'claude', binary: null, args: [], timeoutSecs: 60 },
+  });
+  expect(kernel.ok()).toBeTruthy();
+
+  const cardDir = path.join(projectDir(project.dirName as string), 'card');
+  expect(fs.existsSync(cardDir)).toBeTruthy();
+  expect(fs.readdirSync(cardDir).filter((file) => file.endsWith('.md'))).toHaveLength(0);
+
+  await page.goto(`/projects/${project.id}`);
+  await page.getByRole('button', { name: '助手', exact: true }).click();
+  const assistant = page.locator('.assistant-sidebar');
+  await assistant.getByRole('button', { name: '建议式' }).click();
+  await assistant.getByLabel('给项目助手的消息').fill('card 目录是空的，请新建 3 张文卡图。');
+  await assistant.getByRole('button', { name: '发送' }).click();
+  await expect(assistant).toContainText('建议新建 3 条素材', { timeout: 15_000 });
+  await expect(assistant).toContainText('未创建');
+  expect(fs.readdirSync(cardDir).filter((file) => file.endsWith('.md'))).toHaveLength(0);
+  await page.screenshot({ path: path.join(SHOTS, '15-assistant-create.png') });
+
+  await assistant.getByRole('button', { name: '采纳并写入' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('新建 3 条素材');
+  await dialog.getByRole('button', { name: '创建素材' }).click();
+  await expect(assistant).toContainText('已新建 3 条素材', { timeout: 15_000 });
+
+  const projectAfter = await (await request.get(`/api/projects/${project.id}`)).json();
+  expect(projectAfter.assets.card).toHaveLength(3);
+  expect(fs.readdirSync(cardDir).filter((file) => file.endsWith('.md'))).toHaveLength(3);
+  await assistant.getByRole('button', { name: '关闭助手' }).click();
 });
 
 test('media generation saves an illustration into the project', async ({ page, request }) => {

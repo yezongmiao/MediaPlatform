@@ -7730,3 +7730,47 @@ input[type="range"] {
     flex-direction: column;
   }
 }
+
+.assistant-creates {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 9px;
+  background: var(--accent-faint);
+}
+
+.assistant-creates.is-applied {
+  border-color: color-mix(in srgb, var(--jade) 20%, var(--line));
+  background: var(--jade-soft);
+}
+
+.assistant-creates .assistant-edits-head {
+  color: var(--accent);
+}
+
+.assistant-creates.is-applied .assistant-edits-head {
+  color: var(--jade);
+}
+
+.assistant-create-note {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.assistant-proposal-actions {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, var(--ink) 12%, var(--line));
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+
+.assistant-proposal-actions > span {
+  color: var(--muted);
+  font-size: 9px;
+}

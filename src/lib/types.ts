@@ -375,12 +375,21 @@ export interface AssistantEdit {
   summary?: string;
 }
 
+export interface AssistantCreate {
+  assetId?: string;
+  kind: Kind;
+  title: string;
+  content: string;
+  summary?: string;
+}
+
 export interface AssistantMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
   edits?: AssistantEdit[];
+  newAssets?: AssistantCreate[];
   applied?: boolean;
 }
 
@@ -392,6 +401,7 @@ export interface AssistantHistory {
 export interface AssistantChatResponse {
   reply: string;
   edits: AssistantEdit[];
+  newAssets?: AssistantCreate[];
   applied: boolean;
   kernel: string;
   model: string;

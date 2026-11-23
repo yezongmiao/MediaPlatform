@@ -301,20 +301,55 @@ export function AssistantPanel({
                               </div>
                             );
                           })}
-                          {!message.applied ? (
-                            <div class="assistant-edits-actions">
-                              <span>确认采用这组改动后才会写入文件</span>
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                icon="check"
-                                disabled={loading}
-                                onClick={() => setApplyTarget(message)}
-                              >
-                                采纳并写入
-                              </Button>
-                            </div>
+                        </div>
+                      ) : null}
+                      {message.newAssets?.length ? (
+                        <div class={`assistant-creates ${message.applied ? 'is-applied' : 'is-suggested'}`}>
+                          <div class="assistant-edits-head">
+                            <Icon name={message.applied ? 'check' : 'plus'} size={14} />
+                            {message.applied
+                              ? `已新建 ${message.newAssets.length} 条素材`
+                              : `建议新建 ${message.newAssets.length} 条素材`}
+                          </div>
+                          {message.newAssets.map((create, index) => {
+                            const label = KINDS.find((item) => item.id === create.kind)?.label ?? create.kind;
+                            return (
+                              <div class="assistant-edit-row" key={`${message.id}-new-${index}`}>
+                                <span>
+                                  <strong>{create.title}</strong>
+                                  <small>
+                                    {label}
+                                    {create.summary ? ` · ${create.summary}` : ''}
+                                  </small>
+                                </span>
+                                <span class={`assistant-edit-state ${message.applied ? 'is-applied' : ''}`}>
+                                  {message.applied ? '已创建' : '未创建'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {message.newAssets.some((create) => create.kind === 'card') ? (
+                            <p class="assistant-create-note">文卡图以文案素材保存；PNG 可在文卡图 Studio 导出。</p>
                           ) : null}
+                        </div>
+                      ) : null}
+                      {!message.applied && (message.edits?.length || message.newAssets?.length) ? (
+                        <div class="assistant-edits-actions assistant-proposal-actions">
+                          <span>
+                            {message.edits?.length ? `覆盖 ${message.edits.length} 条` : ''}
+                            {message.edits?.length && message.newAssets?.length ? ' · ' : ''}
+                            {message.newAssets?.length ? `新建 ${message.newAssets.length} 条` : ''}
+                            ，确认后写入文件
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            icon="check"
+                            disabled={loading}
+                            onClick={() => setApplyTarget(message)}
+                          >
+                            采纳并写入
+                          </Button>
                         </div>
                       ) : null}
                     </div>
@@ -421,10 +456,24 @@ export function AssistantPanel({
         title="采纳这组修改？"
         message={
           applyTarget
-            ? `将覆盖 ${applyTarget.edits?.length ?? 0} 条素材的现有内容，并写入项目文件。采纳后不能在助手内自动回滚。`
+            ? [
+                applyTarget.edits?.length
+                  ? `覆盖 ${applyTarget.edits.length} 条已有素材`
+                  : '',
+                applyTarget.newAssets?.length
+                  ? `新建 ${applyTarget.newAssets.length} 条素材`
+                  : '',
+              ].filter(Boolean).join('，并') +
+              '。确认后立即写入项目文件，采纳后不能在助手内自动回滚。'
             : ''
         }
-        confirmLabel="覆盖素材"
+        confirmLabel={
+          applyTarget?.edits?.length && applyTarget?.newAssets?.length
+            ? '确认写入'
+            : applyTarget?.edits?.length
+              ? '覆盖素材'
+              : '创建素材'
+        }
         loading={applying}
         onClose={() => {
           if (!applying) setApplyTarget(null);

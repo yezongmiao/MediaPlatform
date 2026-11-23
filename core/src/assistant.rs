@@ -13,6 +13,8 @@ use crate::store::{self, atomic_write, now_iso, require_project};
 const MAX_MESSAGE_CHARS: usize = 8000;
 const MAX_HISTORY: usize = 40;
 const MAX_CONTEXT_ASSETS: usize = 24;
+const MAX_NEW_ASSETS: usize = 8;
+const MAX_NEW_ASSET_CHARS: usize = 50_000;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,6 +23,8 @@ struct AssistantOutput {
     reply: String,
     #[serde(default)]
     edits: Vec<AssistantEdit>,
+    #[serde(default)]
+    new_assets: Vec<AssistantCreate>,
 }
 
 fn history_path(project_dir: &std::path::Path) -> std::path::PathBuf {
@@ -91,6 +95,14 @@ async fn build_context(
     if !record.brief.trim().is_empty() {
         context.push_str(&format!("简介：{}\n", truncate(record.brief.trim(), 1200)));
     }
+    context.push_str("\n# 素材概览\n");
+    for kind in ASSET_KINDS {
+        context.push_str(&format!(
+            "- {}：{} 条\n",
+            kind_label(kind),
+            grouped.get(kind).map(Vec::len).unwrap_or(0)
+        ));
+    }
     context.push_str("\n# 可编辑素材\n");
     let mut count = 0;
     for kind in ASSET_KINDS {
@@ -120,14 +132,17 @@ async fn build_context(
         "MEDIADESK_ASSISTANT_PROTOCOL\n\
 你是「媒材工坊」的项目助手。你熟悉当前项目与全部素材，可以讨论内容，也可以提出对素材的完整修改。\n\n\
 只输出一个 JSON 对象，不要 markdown 代码围栏，不要输出 JSON 以外的文字。格式：\n\
-{\"reply\":\"给创作者看的回复\",\"edits\":[{\"assetId\":\"素材 id\",\"title\":\"可选的新标题\",\"content\":\"完整替换后的正文\",\"summary\":\"一句话改动摘要\"}]}\n\n\
+{\"reply\":\"给创作者看的回复\",\"edits\":[{\"assetId\":\"已有素材 id\",\"title\":\"可选的新标题\",\"content\":\"完整替换后的正文\",\"summary\":\"一句话改动摘要\"}],\"newAssets\":[{\"kind\":\"card\",\"title\":\"新素材标题\",\"content\":\"完整正文或卡片文案\",\"summary\":\"一句话说明\"}]}\n\n\
 规则：\n\
-1. 只能修改上面列出的 assetId，禁止编造不存在的 id。\n\
-2. content 必须是完整替换内容，不要给 diff 或片段。只改标题时可省略 content。\n\
-3. 没有需要修改的素材时，edits 必须为空数组。\n\
-4. 不编造事实、来源和数据；信息不足时在 reply 中提问。\n\
-5. 直接、具体、克制，使用简体中文。\n\
-6. 建议式下，如果创作者表示同意，提醒对方点击「采纳并写入」；不要声称已经写入。\n\n",
+1. edits 只能修改上面列出的已有 assetId，禁止编造已有素材的 id。\n\
+2. edits.content 必须是完整替换内容，不要给 diff 或片段。只改标题时可省略 content。\n\
+3. 当用户明确要求新增素材，或某一类目录为空、确实需要创建时，使用 newAssets；新建素材不要填写 assetId。\n\
+4. newAssets 的 kind 只能是 article / script / card；一次最多 8 条；title 和 content 必须完整可保存。\n\
+5. 新建文卡图时，content 写卡片主张和补充文案；实际 PNG 仍需用户在「文卡图 Studio」导出。\n\
+6. 没有修改或新建时，edits 与 newAssets 都必须是空数组。\n\
+7. 不编造事实、来源和数据；信息不足时在 reply 中提问。\n\
+8. 直接、具体、克制，使用简体中文。\n\
+9. 建议式下，如果创作者表示同意，提醒对方点击「采纳并写入」；不要声称已经写入。\n\n",
     );
     if mode == "apply" {
         system.push_str("当前模式：直接覆盖。服务端会把 edits 写入素材。\n");
@@ -165,7 +180,7 @@ fn history_user_placeholder() -> &'static str {
     "__CURRENT_USER_MESSAGE__"
 }
 
-fn parse_output(raw: &str) -> (String, Vec<AssistantEdit>) {
+fn parse_output(raw: &str) -> (String, Vec<AssistantEdit>, Vec<AssistantCreate>) {
     let trimmed = raw.trim();
     let candidates = [
         trimmed.to_string(),
@@ -197,10 +212,10 @@ fn parse_output(raw: &str) -> (String, Vec<AssistantEdit>) {
             } else {
                 output.reply.trim().to_string()
             };
-            return (reply, output.edits);
+            return (reply, output.edits, output.new_assets);
         }
     }
-    (trimmed.to_string(), Vec::new())
+    (trimmed.to_string(), Vec::new(), Vec::new())
 }
 
 async fn apply_edits(
@@ -288,13 +303,24 @@ async fn finalize_chat(
     kernel: String,
 ) -> ApiResult<AssistantChatResponse> {
     let latency_ms = started.elapsed().as_millis() as u64;
-    let (reply, edits) = parse_output(raw);
-    let (applied_edits, warnings) = if prepared.mode == "apply" {
+    let (reply, edits, new_assets) = parse_output(raw);
+    let (applied_edits, mut warnings) = if prepared.mode == "apply" {
         apply_edits(workspace, project_id, &edits).await
     } else {
         (Vec::new(), Vec::new())
     };
-    let applied = !applied_edits.is_empty();
+    let (applied_creates, create_warnings) = if prepared.mode == "apply" {
+        create_assets(workspace, project_id, &new_assets).await
+    } else {
+        (Vec::new(), Vec::new())
+    };
+    warnings.extend(create_warnings);
+    let applied = !applied_edits.is_empty() || !applied_creates.is_empty();
+    let stored_creates = if prepared.mode == "apply" {
+        applied_creates
+    } else {
+        new_assets
+    };
 
     let mut messages = prepared.history;
     messages.push(AssistantMessage {
@@ -303,6 +329,7 @@ async fn finalize_chat(
         content: prepared.message,
         created_at: now_iso(),
         edits: Vec::new(),
+        new_assets: Vec::new(),
         applied: false,
     });
     messages.push(AssistantMessage {
@@ -311,12 +338,14 @@ async fn finalize_chat(
         content: reply.clone(),
         created_at: now_iso(),
         edits: edits.clone(),
+        new_assets: stored_creates.clone(),
         applied,
     });
     save_history(&prepared.record.dir_path, &messages).await?;
     Ok(AssistantChatResponse {
         reply,
         edits,
+        new_assets: stored_creates,
         applied,
         kernel,
         model,
@@ -324,6 +353,69 @@ async fn finalize_chat(
         warnings,
         messages,
     })
+}
+
+async fn create_assets(
+    workspace: &std::path::Path,
+    project_id: &str,
+    creates: &[AssistantCreate],
+) -> (Vec<AssistantCreate>, Vec<String>) {
+    let mut created = Vec::new();
+    let mut warnings = Vec::new();
+    for create in creates.iter().take(MAX_NEW_ASSETS) {
+        let kind = create.kind.trim().to_ascii_lowercase();
+        if !["article", "script", "card"].contains(&kind.as_str()) {
+            warnings.push(format!(
+                "「{}」的类型 {} 不能由助手新建；只支持文章、脚本、文卡图。",
+                create.title.trim(),
+                create.kind
+            ));
+            continue;
+        }
+        let title = create.title.trim();
+        if title.is_empty() {
+            warnings.push("新建素材缺少标题，已跳过。".to_string());
+            continue;
+        }
+        if create.content.trim().is_empty() {
+            warnings.push(format!("新建素材「{title}」缺少正文，已跳过。"));
+            continue;
+        }
+        if create.content.chars().count() > MAX_NEW_ASSET_CHARS {
+            warnings.push(format!("新建素材「{title}」内容过长，已跳过。"));
+            continue;
+        }
+        match assets::create_asset(
+            workspace,
+            project_id,
+            CreateAsset {
+                kind: kind.clone(),
+                title: title.to_string(),
+                content: create.content.clone(),
+                status: None,
+                tags: Vec::new(),
+                prompt: None,
+                source: Some("llm".to_string()),
+            },
+        )
+        .await
+        {
+            Ok(asset) => {
+                let mut next = create.clone();
+                next.kind = kind;
+                next.title = title.to_string();
+                next.asset_id = Some(asset.meta.id);
+                created.push(next);
+            }
+            Err(err) => warnings.push(format!("新建「{title}」失败：{}", err.message)),
+        }
+    }
+    if creates.len() > MAX_NEW_ASSETS {
+        warnings.push(format!(
+            "一次最多新建 {MAX_NEW_ASSETS} 条素材，超出的部分已忽略。"
+        ));
+    }
+    (created, warnings)
 }
 
 pub async fn chat(
@@ -493,13 +585,19 @@ pub async fn apply_saved_suggestion(
             messages,
         });
     }
-    if messages[index].edits.is_empty() {
+    if messages[index].edits.is_empty() && messages[index].new_assets.is_empty() {
         return Err(ApiError::bad_request("这条消息没有可采纳的素材改动"));
     }
-    let (applied_edits, warnings) =
+    let (applied_edits, mut warnings) =
         apply_edits(workspace, project_id, &messages[index].edits).await;
-    let applied = !applied_edits.is_empty();
+    let (created, create_warnings) =
+        create_assets(workspace, project_id, &messages[index].new_assets).await;
+    warnings.extend(create_warnings);
+    let applied = !applied_edits.is_empty() || !created.is_empty();
     messages[index].applied = applied;
+    if !created.is_empty() {
+        messages[index].new_assets = created;
+    }
     save_history(&record.dir_path, &messages).await?;
     Ok(AssistantApplyResponse {
         applied,

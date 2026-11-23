@@ -856,6 +856,20 @@ pub struct AssistantEdit {
     pub summary: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantCreate {
+    /// Filled by the server after the asset is actually created.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_id: Option<String>,
+    pub kind: String,
+    pub title: String,
+    #[serde(default)]
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantMessage {
@@ -865,6 +879,8 @@ pub struct AssistantMessage {
     pub created_at: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edits: Vec<AssistantEdit>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub new_assets: Vec<AssistantCreate>,
     #[serde(default)]
     pub applied: bool,
 }
@@ -889,6 +905,7 @@ pub struct AssistantChatRequest {
 pub struct AssistantChatResponse {
     pub reply: String,
     pub edits: Vec<AssistantEdit>,
+    pub new_assets: Vec<AssistantCreate>,
     pub applied: bool,
     pub kernel: String,
     pub model: String,
