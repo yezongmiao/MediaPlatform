@@ -18,6 +18,8 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
 use crate::assets;
+use crate::assistant;
+use crate::cli;
 use crate::context;
 use crate::error::{ApiError, ApiResult};
 use crate::library;
@@ -100,6 +102,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/workspace/reveal", post(reveal_workspace))
         .route("/api/fs/browse", get(browse))
         .route("/api/config", get(get_config).put(put_config))
+        .route("/api/config/kernel", put(put_kernel_config))
+        .route("/api/config/media", put(put_media_config))
+        .route("/api/cli/status", get(cli_status))
         .route("/api/llm/test", post(test_llm))
         .route("/api/llm/prompt", post(preview_prompt))
         .route("/api/llm/generate", post(generate))
@@ -130,6 +135,12 @@ pub fn router(state: Arc<AppState>) -> Router {
             get(get_asset).put(update_asset).delete(delete_asset),
         )
         .route("/api/projects/{id}/uploads", post(upload_asset))
+        .route(
+            "/api/projects/{id}/chat",
+            get(get_assistant_history)
+                .post(chat_with_assistant)
+                .delete(clear_assistant_history),
+        )
         .route("/api/search", get(search))
         .route("/files/{*path}", get(serve_file))
         .fallback(ui::fallback)
@@ -210,6 +221,116 @@ fn validate_base_url(url: &str) -> ApiResult<()> {
         return Err(ApiError::bad_request("Base URL 格式不正确"));
     }
     Ok(())
+}
+
+async fn cli_status(State(state): State<Arc<AppState>>) -> ApiResult<Json<KernelStatus>> {
+    let config = store::load_config(&state.workspace()).await?;
+    Ok(Json(cli::status(&config)))
+}
+
+fn validate_cli_args(args: &[String]) -> ApiResult<()> {
+    if args.len() > 20 {
+        return Err(ApiError::bad_request("CLI 参数最多 20 个"));
+    }
+    for arg in args {
+        if arg.chars().count() > 4000 || arg.contains('\0') {
+            return Err(ApiError::bad_request("CLI 参数过长或包含非法字符"));
+        }
+    }
+    Ok(())
+}
+
+async fn put_kernel_config(
+    State(state): State<Arc<AppState>>,
+    Json(update): Json<TextKernelUpdate>,
+) -> ApiResult<Json<ConfigView>> {
+    let kernel = update.kernel.trim();
+    if !["api", "claude", "opencode", "deepseek"].contains(&kernel) {
+        return Err(ApiError::bad_request("不支持的文本内核"));
+    }
+    if !(10..=1800).contains(&update.timeout_secs) {
+        return Err(ApiError::bad_request("CLI 超时时间必须在 10–1800 秒之间"));
+    }
+    validate_cli_args(&update.args)?;
+    let workspace = state.workspace();
+    let mut config = store::load_config(&workspace).await?;
+    config.text_kernel = kernel.to_string();
+    config.cli.binary = update
+        .binary
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(str::to_string);
+    config.cli.args = update.args;
+    config.cli.timeout_secs = update.timeout_secs;
+    store::save_config(&workspace, &config).await?;
+    Ok(Json(ConfigView::from(&config)))
+}
+
+fn apply_media_profile(
+    profile: &mut MediaProfile,
+    update: MediaProfileUpdate,
+    kind: &str,
+) -> ApiResult<()> {
+    if !update.base_url.trim().is_empty() {
+        validate_base_url(&update.base_url)?;
+    }
+    let protocol = update.protocol.trim().to_ascii_lowercase();
+    let allowed = if kind == "video" {
+        ["openai", "task", "seedance"].as_slice()
+    } else {
+        ["openai"].as_slice()
+    };
+    if !allowed.contains(&protocol.as_str()) {
+        return Err(ApiError::bad_request(format!(
+            "{}协议不支持：{}",
+            if kind == "video" { "视频" } else { "图像" },
+            update.protocol
+        )));
+    }
+    for path in [&update.create_path, &update.status_path] {
+        if path.chars().any(char::is_control) {
+            return Err(ApiError::bad_request("媒体接口路径不能包含控制字符"));
+        }
+    }
+    profile.base_url = update.base_url.trim().trim_end_matches('/').to_string();
+    profile.model = update.model.trim().to_string();
+    profile.protocol = protocol;
+    profile.create_path = update.create_path.trim().to_string();
+    profile.status_path = update.status_path.trim().to_string();
+    profile.style = update.style.trim().to_string();
+    if let Some(key) = update.api_key {
+        profile.api_key = key.trim().to_string();
+    }
+    Ok(())
+}
+
+async fn put_media_config(
+    State(state): State<Arc<AppState>>,
+    Json(update): Json<MediaGenUpdate>,
+) -> ApiResult<Json<ConfigView>> {
+    if !(10..=1800).contains(&update.timeout_secs) {
+        return Err(ApiError::bad_request("媒体请求超时必须在 10–1800 秒之间"));
+    }
+    if !(1..=60).contains(&update.poll_interval_secs) {
+        return Err(ApiError::bad_request("轮询间隔必须在 1–60 秒之间"));
+    }
+    if !(30..=3600).contains(&update.video_timeout_secs) {
+        return Err(ApiError::bad_request("视频任务超时必须在 30–3600 秒之间"));
+    }
+    let workspace = state.workspace();
+    let mut config = store::load_config(&workspace).await?;
+    apply_media_profile(
+        &mut config.media_gen.illustration,
+        update.illustration,
+        "illustration",
+    )?;
+    apply_media_profile(&mut config.media_gen.video, update.video, "video")?;
+    config.media_gen.timeout_secs = update.timeout_secs;
+    config.media_gen.poll_interval_secs = update.poll_interval_secs;
+    config.media_gen.video_timeout_secs = update.video_timeout_secs;
+    store::save_config(&workspace, &config).await?;
+    Ok(Json(ConfigView::from(&config)))
 }
 
 async fn put_config(
@@ -580,6 +701,33 @@ async fn test_llm(
     Ok(Json(
         llm::test_connection(&state.workspace(), &state.client, req).await?,
     ))
+}
+
+async fn get_assistant_history(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<AssistantHistory>> {
+    Ok(Json(
+        assistant::load_history(&state.workspace(), &id).await?,
+    ))
+}
+
+async fn chat_with_assistant(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(req): Json<AssistantChatRequest>,
+) -> ApiResult<Json<AssistantChatResponse>> {
+    Ok(Json(
+        assistant::chat(&state.workspace(), &state.client, &id, req).await?,
+    ))
+}
+
+async fn clear_assistant_history(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<StatusCode> {
+    assistant::clear_history(&state.workspace(), &id).await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn serve_file(

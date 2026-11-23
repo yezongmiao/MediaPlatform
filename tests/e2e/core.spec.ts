@@ -321,3 +321,107 @@ test('switch workspace from settings and restore it', async ({ page, request }) 
   expect(search.ideas.some((idea: { title: string }) => idea.title === marker)).toBe(true);
   await expect(page.getByText('e2e-workspace').first()).toBeVisible();
 });
+
+test('CLI text kernel and project assistant edits', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E CLI 与助手项目', brief: '验证本地 CLI 与项目助手。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  const projectId = project.id as string;
+  const assetResponse = await request.post(`/api/projects/${projectId}/assets`, {
+    data: { kind: 'article', title: '助手原文', content: '原始正文，等待助手修改。' },
+  });
+  expect(assetResponse.ok()).toBeTruthy();
+  const originalAsset = await assetResponse.json();
+
+  await page.goto('/settings');
+  const kernelCard = page.locator('.kernel-card');
+  await kernelCard.getByRole('button', { name: /Claude Code/ }).click();
+  await expect(kernelCard.locator('.kernel-status')).toContainText('mock-cli.mjs');
+  await kernelCard.getByRole('button', { name: '保存文本内核' }).click();
+  await expect(page.locator('.toast-host')).toContainText('文本内核已保存');
+
+  await page.goto(`/projects/${projectId}`);
+  await page.getByRole('button', { name: '生成素材' }).click();
+  const generate = page.getByRole('dialog');
+  await generate.locator('textarea.generate-instruction').fill('用 CLI 写一段测试文字');
+  await generate.getByRole('button', { name: '生成', exact: true }).click();
+  await expect(generate.locator('.result-body')).toContainText('E2E CLI 生成文章', {
+    timeout: 15_000,
+  });
+  await expect(generate.locator('.generate-kernel-pill')).toContainText('Claude');
+  await page.keyboard.press('Escape');
+  await expect(generate).not.toBeVisible();
+
+  await page.getByRole('button', { name: '助手', exact: true }).click();
+  const assistant = page.locator('.modal-panel.assistant-modal');
+  await expect(assistant).toBeVisible();
+  await assistant.getByRole('button', { name: '覆盖式' }).click();
+  await assistant.getByLabel('给项目助手的消息').fill('把原文改得更紧凑。');
+  await assistant.getByRole('button', { name: '发送' }).click();
+  await expect(assistant).toContainText('已更新 1 条素材', { timeout: 15_000 });
+  await page.screenshot({ path: path.join(SHOTS, '12-assistant.png'), fullPage: true });
+  await assistant.getByRole('button', { name: '关闭' }).click();
+
+  const updatedResponse = await request.get(
+    `/api/projects/${projectId}/assets/${originalAsset.id}`,
+  );
+  const updated = await updatedResponse.json();
+  expect(updated.content).toContain('E2E 助手改稿');
+});
+
+test('media generation saves an illustration into the project', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E 媒体生成项目', brief: '验证图像生成落盘。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  const projectId = project.id as string;
+
+  const configured = await request.put('/api/config/media', {
+    data: {
+      illustration: {
+        baseUrl: MOCK_URL,
+        apiKey: 'media-key',
+        model: 'mock-image-e2e',
+        protocol: 'openai',
+        createPath: '',
+        statusPath: '',
+        style: '暖纸色编辑插画',
+      },
+      video: {
+        baseUrl: MOCK_URL,
+        apiKey: 'media-key',
+        model: 'mock-video-e2e',
+        protocol: 'openai',
+        createPath: '/videos',
+        statusPath: '',
+        style: '纪实慢镜头',
+      },
+      timeoutSecs: 30,
+      pollIntervalSecs: 1,
+      videoTimeoutSecs: 60,
+    },
+  });
+  expect(configured.ok()).toBeTruthy();
+
+  await page.goto(`/projects/${projectId}`);
+  await page.locator('.project-tab').filter({ hasText: '插图' }).click();
+  await page.locator('.kind-toolbar').getByRole('button', { name: '生成', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.locator('.generate-kind.is-active')).toContainText('插图');
+  await dialog.locator('textarea.generate-instruction').fill('晨光下的书桌');
+  await dialog.getByRole('button', { name: '生成并保存' }).click();
+  await expect(dialog.locator('.result-media img')).toBeVisible({ timeout: 15_000 });
+  await expect(dialog).toContainText('已写入项目');
+  await page.screenshot({ path: path.join(SHOTS, '13-media-result.png'), fullPage: true });
+
+  const projectResponse = await request.get(`/api/projects/${projectId}`);
+  const refreshed = await projectResponse.json();
+  expect(refreshed.assets.illustration.length).toBe(1);
+  expect(refreshed.assets.illustration[0].file).toMatch(/\.png$/);
+
+  await dialog.getByRole('button', { name: '查看并编辑' }).click();
+  await expect(page.getByRole('dialog').locator('.asset-editor')).toBeVisible();
+});

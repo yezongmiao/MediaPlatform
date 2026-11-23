@@ -1,10 +1,13 @@
 pub mod api;
 pub mod assets;
+pub mod assistant;
+pub mod cli;
 pub mod context;
 pub mod error;
 pub mod frontmatter;
 pub mod library;
 pub mod llm;
+pub mod media_gen;
 pub mod models;
 pub mod seed;
 pub mod store;

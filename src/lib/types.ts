@@ -136,7 +136,7 @@ export interface AssetMeta {
   updatedAt: string;
   file?: string;
   prompt?: string;
-  source?: 'manual' | 'llm';
+  source?: 'manual' | 'llm' | 'media-gen';
 }
 
 export interface Asset extends AssetMeta {
@@ -180,10 +180,53 @@ export interface LlmConfigView {
   hasApiKey: boolean;
 }
 
+export type TextKernel = 'api' | 'claude' | 'opencode' | 'deepseek';
+
+export interface CliConfig {
+  binary?: string;
+  args: string[];
+  timeoutSecs: number;
+}
+
+export interface MediaProfileView {
+  baseUrl: string;
+  model: string;
+  protocol: string;
+  createPath: string;
+  statusPath: string;
+  style: string;
+  hasApiKey: boolean;
+}
+
+export interface MediaGenView {
+  illustration: MediaProfileView;
+  video: MediaProfileView;
+  timeoutSecs: number;
+  pollIntervalSecs: number;
+  videoTimeoutSecs: number;
+}
+
 export interface ConfigView {
   version: number;
   llm: LlmConfigView;
   appearance: { theme: string };
+  textKernel: TextKernel;
+  cli: CliConfig;
+  mediaGen: MediaGenView;
+}
+
+export interface KernelInfo {
+  id: 'claude' | 'opencode' | 'deepseek';
+  label: string;
+  found: boolean;
+  path?: string;
+  installHint: string;
+}
+
+export interface KernelStatus {
+  selected: TextKernel;
+  envOverride: boolean;
+  kernels: KernelInfo[];
 }
 
 export interface WorkspaceInfo {
@@ -231,6 +274,8 @@ export interface GenerateResult {
   presetId?: string;
   skillIds: string[];
   snapshotPath?: string;
+  kernel: string;
+  asset?: Asset;
 }
 
 export interface GenerateRequest {
@@ -279,4 +324,39 @@ export interface PresetInput {
   kind: Kind;
   skillIds: string[];
   content: string;
+}
+
+
+export type AssistantMode = 'suggest' | 'apply';
+
+export interface AssistantEdit {
+  assetId: string;
+  title?: string;
+  content?: string;
+  summary?: string;
+}
+
+export interface AssistantMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: string;
+  edits?: AssistantEdit[];
+  applied?: boolean;
+}
+
+export interface AssistantHistory {
+  messages: AssistantMessage[];
+  kernel: TextKernel;
+}
+
+export interface AssistantChatResponse {
+  reply: string;
+  edits: AssistantEdit[];
+  applied: boolean;
+  kernel: string;
+  model: string;
+  latencyMs: number;
+  warnings: string[];
+  messages: AssistantMessage[];
 }

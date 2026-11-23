@@ -1,8 +1,12 @@
 # 会话记录：CLI 内核分流 + 媒体生成模型 + 项目助手（2026-11-22）
 
 > 本文档记录本会话的**目标、决策、调研结论与实施状态**。
-> 重要提示：截至本文档写入时，**三期功能代码尚未编写**，本会话完成的是
-> 环境修复、架构调研与方案设计。后续实施请以「下一步实施计划」一节为准。
+> **实施状态（2026-11-23）：三期功能已全部落地。** 本文保留原始调研与计划；
+> 当前代码、命令和验收结果以 [README](../../README.md) 与
+> [验收记录](../ACCEPTANCE.md) 为准。
+>
+> 已实现：`core/src/cli.rs`、`core/src/media_gen.rs`、`core/src/assistant.rs`；
+> 设置页文本内核/媒体生成；项目页助手会话；mock CLI、媒体 mock 与 Playwright 用例。
 
 ---
 
@@ -35,6 +39,16 @@
 | ③ | 助手改动能力 | **会话面板 + 一个开关**，切换「建议式改动」vs「直接覆盖式改动」 |
 
 分期实施：**① CLI 内核 + 文本生成分流 → ② 插图/视频生成模型接入 → ③ 项目助手会话**。
+
+## 2.1 三期落地结果（2026-11-23）
+
+| 期 | 状态 | 落地内容 |
+|---|---|---|
+| ① CLI 内核 + 文本分流 | 完成 | PATH 探测、Windows `.cmd` 包装、stdin/`{prompt}`、超时与结构化错误；article/script/card 走所选内核；API 为默认兼容路径 |
+| ② 插图/视频媒体生成 | 完成 | 图像 OpenAI Images 兼容；视频 `openai` / `task` / `seedance` 协议；URL/base64 解析、轮询、落盘、sidecar、提示词快照 |
+| ③ 项目助手 | 完成 | 会话历史持久化、建议/覆盖模式、JSON 编辑协议、复用 `assets::update_asset`、项目页会话面板 |
+
+验证命令：`npm run check`、`cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings`、`npm run e2e`。当前测试规模：Rust 6 unit + 13 integration，Vitest 12，Playwright 5。
 
 ## 3. 本会话已完成的部分
 
@@ -99,7 +113,7 @@ CLI mock 测试可参照 `mock_llm` 的写法。
   - A：调整顺序（把 `D:\msys64\mingw64\bin` 提到 Anaconda mingw 之前）
   - B：移除 Anaconda 的 mingw 路径
   - C：只改 `scripts/dev.mjs`（仅本项目启动时注入）
-- 本机无 `claude`/`opencode`/`deepseek` 可执行文件（按决策①走 mock CLI）。
+- 调研时本机无 `claude`/`opencode`/`deepseek` 可执行文件；实施验收时检测到 Claude Code 2.1.181，但真实生成仍使用 mock CLI，避免消耗账号额度。
 
 ## 5. 下一步实施计划（三期）
 

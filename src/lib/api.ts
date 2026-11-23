@@ -1,12 +1,17 @@
 import type {
   Asset,
+  AssistantChatResponse,
+  AssistantHistory,
   BrowseInfo,
+  CliConfig,
   ConfigView,
   GenerateRequest,
   GenerateResult,
   Idea,
   Kind,
+  KernelStatus,
   LlmTestResult,
+  MediaProfileView,
   Preset,
   PresetInput,
   Project,
@@ -14,6 +19,7 @@ import type {
   PromptResult,
   SearchResult,
   Skill,
+  TextKernel,
   SkillInput,
   VscodeResult,
   WorkspaceInfo,
@@ -143,6 +149,31 @@ export interface TestLlmPayload {
   apiKey?: string;
 }
 
+export interface KernelConfigPayload {
+  kernel: TextKernel;
+  binary?: string | null;
+  args: string[];
+  timeoutSecs: number;
+}
+
+export interface MediaProfilePayload {
+  baseUrl: string;
+  apiKey?: string;
+  model: string;
+  protocol: string;
+  createPath: string;
+  statusPath: string;
+  style: string;
+}
+
+export interface MediaConfigPayload {
+  illustration: MediaProfilePayload;
+  video: MediaProfilePayload;
+  timeoutSecs: number;
+  pollIntervalSecs: number;
+  videoTimeoutSecs: number;
+}
+
 export const api = {
   health: () => request<{ ok: boolean; version: string }>('/api/health'),
 
@@ -156,6 +187,11 @@ export const api = {
   getConfig: () => request<ConfigView>('/api/config'),
   saveConfig: (payload: LlmConfigPayload) => jsonRequest<ConfigView>('/api/config', 'PUT', payload),
   testLlm: (payload: TestLlmPayload) => jsonRequest<LlmTestResult>('/api/llm/test', 'POST', payload),
+  saveKernelConfig: (payload: KernelConfigPayload) =>
+    jsonRequest<ConfigView>('/api/config/kernel', 'PUT', payload),
+  getKernelStatus: () => request<KernelStatus>('/api/cli/status'),
+  saveMediaConfig: (payload: MediaConfigPayload) =>
+    jsonRequest<ConfigView>('/api/config/media', 'PUT', payload),
   previewPrompt: (payload: GenerateRequest) =>
     jsonRequest<PromptResult>('/api/llm/prompt', 'POST', payload),
   generate: (payload: GenerateRequest) =>
@@ -219,6 +255,13 @@ export const api = {
     }
     return data as Asset;
   },
+
+  getAssistantHistory: (projectId: string) =>
+    request<AssistantHistory>(`/api/projects/${projectId}/chat`),
+  chatAssistant: (projectId: string, payload: { message: string; mode: 'suggest' | 'apply' }) =>
+    jsonRequest<AssistantChatResponse>(`/api/projects/${projectId}/chat`, 'POST', payload),
+  clearAssistantHistory: (projectId: string) =>
+    jsonRequest<void>(`/api/projects/${projectId}/chat`, 'DELETE'),
 
   listSkills: () => request<Skill[]>('/api/skills'),
   createSkill: (payload: SkillInput) => jsonRequest<Skill>('/api/skills', 'POST', payload),

@@ -7,8 +7,10 @@ use serde_json::json;
 use tokio::fs;
 
 use crate::assets;
+use crate::cli::{self, Kernel};
 use crate::error::{ApiError, ApiResult};
 use crate::library;
+use crate::media_gen;
 use crate::models::*;
 use crate::store::{self, atomic_write, now_iso};
 
@@ -424,7 +426,7 @@ async fn chat_completion(
     })
 }
 
-async fn save_snapshot(
+pub(crate) async fn save_snapshot(
     workspace: &std::path::Path,
     project_id: &str,
     req: &GenerateRequest,
@@ -458,13 +460,13 @@ async fn save_snapshot(
     Some(store::rel_path(workspace, &path))
 }
 
-pub async fn generate(
+async fn generate_api(
     workspace: &std::path::Path,
     client: &reqwest::Client,
     req: GenerateRequest,
+    config: &Config,
+    compiled: PromptResult,
 ) -> ApiResult<GenerateResult> {
-    let config = store::load_config(workspace).await?;
-    let compiled = build_prompt(workspace, &req).await?;
     let outcome =
         chat_completion(client, &config.llm, &compiled.system, &compiled.user, None).await?;
 
@@ -490,7 +492,92 @@ pub async fn generate(
         preset_id: compiled.preset.map(|p| p.id),
         skill_ids: compiled.skills.into_iter().map(|s| s.id).collect(),
         snapshot_path,
+        kernel: "api".to_string(),
+        asset: None,
     })
+}
+
+async fn generate_cli(
+    workspace: &std::path::Path,
+    req: GenerateRequest,
+    config: &Config,
+    compiled: PromptResult,
+) -> ApiResult<GenerateResult> {
+    let kernel = Kernel::from_id(&config.text_kernel).ok_or_else(|| {
+        ApiError::bad_request(format!("不支持的文本内核：{}", config.text_kernel))
+    })?;
+    let cwd = match req.project_id.as_deref() {
+        Some(id) => store::require_project(workspace, id).await?.dir_path,
+        None => workspace.to_path_buf(),
+    };
+    let outcome = cli::run(&cwd, &config.cli, kernel, &compiled.prompt).await?;
+
+    let snapshot_path = if let Some(project_id) = req.project_id.as_deref() {
+        save_snapshot(
+            workspace,
+            project_id,
+            &req,
+            &compiled.prompt,
+            &outcome.model,
+        )
+        .await
+    } else {
+        None
+    };
+
+    Ok(GenerateResult {
+        content: outcome.content,
+        model: outcome.model,
+        usage: Usage::default(),
+        latency_ms: outcome.latency_ms,
+        prompt: compiled.prompt,
+        preset_id: compiled.preset.map(|p| p.id),
+        skill_ids: compiled.skills.into_iter().map(|s| s.id).collect(),
+        snapshot_path,
+        kernel: kernel.id().to_string(),
+        asset: None,
+    })
+}
+
+pub async fn generate(
+    workspace: &std::path::Path,
+    client: &reqwest::Client,
+    req: GenerateRequest,
+) -> ApiResult<GenerateResult> {
+    let config = store::load_config(workspace).await?;
+    if matches!(req.kind.as_str(), "illustration" | "video") {
+        let profile = if req.kind == "illustration" {
+            &config.media_gen.illustration
+        } else {
+            &config.media_gen.video
+        };
+        let compiled = build_media_prompt(workspace, &req, &profile.style).await?;
+        let preset_id = compiled.preset.as_ref().map(|p| p.id.clone());
+        let skill_ids = compiled
+            .skills
+            .iter()
+            .map(|s| s.id.clone())
+            .collect::<Vec<_>>();
+        let outcome = media_gen::generate(workspace, client, &config, req, compiled).await?;
+        return Ok(GenerateResult {
+            content: format!("已生成并保存素材《{}》。", outcome.asset.meta.title),
+            model: outcome.model,
+            usage: Usage::default(),
+            latency_ms: outcome.latency_ms,
+            prompt: outcome.prompt,
+            preset_id,
+            skill_ids,
+            snapshot_path: outcome.snapshot_path,
+            kernel: "media".to_string(),
+            asset: Some(outcome.asset),
+        });
+    }
+    let compiled = build_prompt(workspace, &req).await?;
+    if config.text_kernel != "api" {
+        generate_cli(workspace, req, &config, compiled).await
+    } else {
+        generate_api(workspace, client, req, &config, compiled).await
+    }
 }
 
 fn merge_test_config(stored: &LlmConfig, overrides: &TestLlmRequest) -> LlmConfig {
@@ -551,6 +638,148 @@ pub async fn test_connection(
     })
 }
 
+pub struct TextCompletion {
+    pub content: String,
+    pub model: String,
+    pub latency_ms: u64,
+    pub usage: Usage,
+}
+
+/// Complete an arbitrary system/user prompt through the configured HTTP API.
+/// Used by the project assistant when the selected kernel is `api`.
+pub async fn complete_text(
+    workspace: &std::path::Path,
+    client: &reqwest::Client,
+    system: &str,
+    user: &str,
+    max_tokens: Option<u32>,
+) -> ApiResult<TextCompletion> {
+    let config = store::load_config(workspace).await?;
+    let outcome = chat_completion(client, &config.llm, system, user, max_tokens).await?;
+    Ok(TextCompletion {
+        content: outcome.content,
+        model: outcome.model,
+        latency_ms: outcome.latency_ms,
+        usage: outcome.usage,
+    })
+}
+
 pub async fn preview(workspace: &std::path::Path, req: GenerateRequest) -> ApiResult<PromptResult> {
+    if matches!(req.kind.as_str(), "illustration" | "video") {
+        let config = store::load_config(workspace).await?;
+        let profile = if req.kind == "illustration" {
+            &config.media_gen.illustration
+        } else {
+            &config.media_gen.video
+        };
+        return build_media_prompt(workspace, &req, &profile.style).await;
+    }
     build_prompt(workspace, &req).await
+}
+
+/// Build the visual prompt used by image/video generation models.
+/// Unlike `build_prompt`, this does not ask a text model for prose; it produces
+/// a concise visual brief that can be sent directly to a media endpoint.
+pub async fn build_media_prompt(
+    workspace: &std::path::Path,
+    req: &GenerateRequest,
+    style: &str,
+) -> ApiResult<PromptResult> {
+    if !matches!(req.kind.as_str(), "illustration" | "video") {
+        return Err(ApiError::bad_request("该类型不使用视觉提示词"));
+    }
+    let project = match req.project_id.as_deref() {
+        Some(id) => Some(store::require_project(workspace, id).await?),
+        None => None,
+    };
+    let mut idea_ids: Vec<String> = project
+        .as_ref()
+        .map(|p| p.meta.idea_ids.clone())
+        .unwrap_or_default();
+    for id in &req.idea_ids {
+        if !idea_ids.contains(id) {
+            idea_ids.push(id.clone());
+        }
+    }
+    let mut ideas: Vec<Idea> = Vec::new();
+    for id in idea_ids.iter().take(4) {
+        if let Ok(idea) = store::get_idea(workspace, id).await {
+            ideas.push(idea);
+        }
+    }
+
+    let mut visual = String::new();
+    if let Some(project) = &project {
+        visual.push_str(&format!("项目：{}\n", project.meta.title));
+        if !project.brief.trim().is_empty() {
+            visual.push_str(&format!(
+                "项目简介：{}\n",
+                truncate_chars(project.brief.trim(), 1400)
+            ));
+        }
+        let grouped = assets::scan_project(workspace, project, false).await?;
+        let mut existing: Vec<String> = Vec::new();
+        for kind in ASSET_KINDS {
+            for asset in grouped.get(kind).into_iter().flatten().take(6) {
+                existing.push(format!("{}《{}》", kind_label(kind), asset.meta.title));
+            }
+        }
+        if !existing.is_empty() {
+            visual.push_str(&format!("已有素材（避免重复）：{}\n", existing.join("、")));
+        }
+    } else {
+        visual.push_str("项目：未立项的快速视觉创作。\n");
+    }
+    if !ideas.is_empty() {
+        visual.push_str("\n灵感来源：\n");
+        for idea in ideas {
+            visual.push_str(&format!(
+                "- {}：{}\n",
+                idea.meta.title,
+                truncate_chars(idea.content.trim(), 900)
+            ));
+        }
+    }
+    let instruction = if req.instruction.trim().is_empty() {
+        match req.kind.as_str() {
+            "illustration" => "为这个项目创作一张有辨识度的主视觉插画。",
+            _ => "为这个项目创作一段有叙事感的短视频。",
+        }
+    } else {
+        req.instruction.trim()
+    };
+    let style = style.trim();
+    if !style.is_empty() {
+        visual.push_str(&format!("\n统一风格：{style}\n"));
+    }
+    match req.kind.as_str() {
+        "illustration" => visual.push_str(
+            "\n画面要求：完整构图，明确主体、场景、光线、色彩与材质；适合编辑插画或主视觉；不出现文字、水印、logo、畸形人脸。\n",
+        ),
+        _ => visual.push_str(
+            "\n视频要求：主体、动作、场景、镜头运动、光线与节奏要连贯；适合短镜头；不出现文字、水印、logo、畸形人脸。\n",
+        ),
+    }
+    visual.push_str(&format!("\n创作要求：{instruction}\n"));
+
+    let system = "你是视觉导演。根据项目上下文与创作者要求，写清楚可执行的画面描述；不要解释，不要输出代码块。";
+    let user = format!(
+        "素材类型：{}（{}）\n创作要求：{}\n风格：{}\n",
+        kind_label(&req.kind),
+        req.kind,
+        instruction,
+        if style.is_empty() {
+            "跟随项目气质"
+        } else {
+            style
+        }
+    );
+    Ok(PromptResult {
+        prompt: visual.trim().to_string(),
+        system: system.to_string(),
+        user,
+        kind: req.kind.clone(),
+        preset: None,
+        skills: Vec::new(),
+    })
 }

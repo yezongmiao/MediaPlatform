@@ -35,6 +35,30 @@ fn default_version() -> u32 {
     1
 }
 
+fn default_text_kernel() -> String {
+    "api".into()
+}
+
+fn default_cli_timeout() -> u64 {
+    240
+}
+
+fn default_media_timeout() -> u64 {
+    300
+}
+
+fn default_poll_interval() -> u64 {
+    5
+}
+
+fn default_video_timeout() -> u64 {
+    600
+}
+
+fn default_media_protocol() -> String {
+    "openai".into()
+}
+
 fn default_base_url() -> String {
     "https://api.deepseek.com/v1".into()
 }
@@ -348,6 +372,169 @@ impl Default for Appearance {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CliConfig {
+    /// Optional absolute path. Empty means auto-detect from PATH.
+    #[serde(default)]
+    pub binary: Option<String>,
+    /// Extra CLI arguments. `{prompt}` is substituted if present; otherwise stdin receives the prompt.
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default = "default_cli_timeout")]
+    pub timeout_secs: u64,
+}
+
+impl Default for CliConfig {
+    fn default() -> Self {
+        Self {
+            binary: None,
+            args: Vec::new(),
+            timeout_secs: default_cli_timeout(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaProfile {
+    #[serde(default)]
+    pub base_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub model: String,
+    /// `openai` for /images/generations or /videos; `task` for a generic async task endpoint.
+    #[serde(default = "default_media_protocol")]
+    pub protocol: String,
+    /// Optional create path, e.g. `/contents/generations/tasks`; defaults per kind.
+    #[serde(default)]
+    pub create_path: String,
+    /// Task polling path; `{id}` is substituted. Empty means create_path + `/{id}`.
+    #[serde(default)]
+    pub status_path: String,
+    #[serde(default)]
+    pub style: String,
+}
+
+impl Default for MediaProfile {
+    fn default() -> Self {
+        Self {
+            base_url: String::new(),
+            api_key: String::new(),
+            model: String::new(),
+            protocol: default_media_protocol(),
+            create_path: String::new(),
+            status_path: String::new(),
+            style: String::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaGenConfig {
+    #[serde(default)]
+    pub illustration: MediaProfile,
+    #[serde(default)]
+    pub video: MediaProfile,
+    #[serde(default = "default_media_timeout")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_poll_interval")]
+    pub poll_interval_secs: u64,
+    #[serde(default = "default_video_timeout")]
+    pub video_timeout_secs: u64,
+}
+
+impl Default for MediaGenConfig {
+    fn default() -> Self {
+        Self {
+            illustration: MediaProfile::default(),
+            video: MediaProfile::default(),
+            timeout_secs: default_media_timeout(),
+            poll_interval_secs: default_poll_interval(),
+            video_timeout_secs: default_video_timeout(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaProfileView {
+    pub base_url: String,
+    pub model: String,
+    pub protocol: String,
+    pub create_path: String,
+    pub status_path: String,
+    pub style: String,
+    pub has_api_key: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaGenView {
+    pub illustration: MediaProfileView,
+    pub video: MediaProfileView,
+    pub timeout_secs: u64,
+    pub poll_interval_secs: u64,
+    pub video_timeout_secs: u64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaProfileUpdate {
+    pub base_url: String,
+    /// Omit to keep the stored key; empty string clears it.
+    pub api_key: Option<String>,
+    pub model: String,
+    pub protocol: String,
+    #[serde(default)]
+    pub create_path: String,
+    #[serde(default)]
+    pub status_path: String,
+    #[serde(default)]
+    pub style: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaGenUpdate {
+    pub illustration: MediaProfileUpdate,
+    pub video: MediaProfileUpdate,
+    pub timeout_secs: u64,
+    pub poll_interval_secs: u64,
+    pub video_timeout_secs: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernelInfo {
+    pub id: String,
+    pub label: String,
+    pub found: bool,
+    pub path: Option<String>,
+    pub install_hint: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernelStatus {
+    pub selected: String,
+    pub env_override: bool,
+    pub kernels: Vec<KernelInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextKernelUpdate {
+    pub kernel: String,
+    #[serde(default)]
+    pub binary: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub timeout_secs: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Config {
     #[serde(default = "default_version")]
     pub version: u32,
@@ -355,6 +542,12 @@ pub struct Config {
     pub llm: LlmConfig,
     #[serde(default)]
     pub appearance: Appearance,
+    #[serde(default = "default_text_kernel")]
+    pub text_kernel: String,
+    #[serde(default)]
+    pub cli: CliConfig,
+    #[serde(default)]
+    pub media_gen: MediaGenConfig,
 }
 
 impl Default for Config {
@@ -363,6 +556,9 @@ impl Default for Config {
             version: 1,
             llm: LlmConfig::default(),
             appearance: Appearance::default(),
+            text_kernel: default_text_kernel(),
+            cli: CliConfig::default(),
+            media_gen: MediaGenConfig::default(),
         }
     }
 }
@@ -384,6 +580,9 @@ pub struct ConfigView {
     pub version: u32,
     pub llm: LlmConfigView,
     pub appearance: Appearance,
+    pub text_kernel: String,
+    pub cli: CliConfig,
+    pub media_gen: MediaGenView,
 }
 
 #[derive(Debug, Deserialize)]
@@ -417,7 +616,28 @@ impl From<&Config> for ConfigView {
             version: c.version,
             llm: LlmConfigView::from(&c.llm),
             appearance: c.appearance.clone(),
+            text_kernel: c.text_kernel.clone(),
+            cli: c.cli.clone(),
+            media_gen: MediaGenView {
+                illustration: media_profile_view(&c.media_gen.illustration),
+                video: media_profile_view(&c.media_gen.video),
+                timeout_secs: c.media_gen.timeout_secs,
+                poll_interval_secs: c.media_gen.poll_interval_secs,
+                video_timeout_secs: c.media_gen.video_timeout_secs,
+            },
         }
+    }
+}
+
+fn media_profile_view(profile: &MediaProfile) -> MediaProfileView {
+    MediaProfileView {
+        base_url: profile.base_url.clone(),
+        model: profile.model.clone(),
+        protocol: profile.protocol.clone(),
+        create_path: profile.create_path.clone(),
+        status_path: profile.status_path.clone(),
+        style: profile.style.clone(),
+        has_api_key: !profile.api_key.trim().is_empty(),
     }
 }
 
@@ -512,6 +732,11 @@ pub struct GenerateResult {
     pub preset_id: Option<String>,
     pub skill_ids: Vec<String>,
     pub snapshot_path: Option<String>,
+    /// `api`, `claude`, `opencode`, `deepseek`, or `media`.
+    pub kernel: String,
+    /// Media generation writes the asset immediately; the UI can open it directly.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<Asset>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -577,6 +802,63 @@ pub struct PresetInput {
     pub skill_ids: Vec<String>,
     #[serde(default)]
     pub content: String,
+}
+
+fn default_assistant_mode() -> String {
+    "suggest".into()
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantEdit {
+    pub asset_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edits: Vec<AssistantEdit>,
+    #[serde(default)]
+    pub applied: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantHistory {
+    pub messages: Vec<AssistantMessage>,
+    pub kernel: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantChatRequest {
+    pub message: String,
+    #[serde(default = "default_assistant_mode")]
+    pub mode: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantChatResponse {
+    pub reply: String,
+    pub edits: Vec<AssistantEdit>,
+    pub applied: bool,
+    pub kernel: String,
+    pub model: String,
+    pub latency_ms: u64,
+    pub warnings: Vec<String>,
+    pub messages: Vec<AssistantMessage>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

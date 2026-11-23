@@ -26,6 +26,7 @@ const server = spawn(path.join(root, 'target/debug/mediadesk-server'), ['--port'
     MEDIADESK_STATE_DIR: stateDir,
     MEDIADESK_CODE_BIN: path.join(root, 'scripts/fake-code.sh'),
     MEDIADESK_CODE_LOG: codeLog,
+    MEDIADESK_CLI_BIN: path.join(root, 'scripts/mock-cli.mjs'),
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });

@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
 use axum::{
-    extract::Json,
+    extract::{Json, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{get, post},
     Router,
 };
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use mediadesk_core::api::{self, AppState};
 use mediadesk_core::{context, store};
 use serde_json::{json, Value};
@@ -166,6 +167,66 @@ async fn mock_llm() -> (String, tokio::task::JoinHandle<()>) {
     let app = Router::new().route("/v1/chat/completions", post(handler));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (format!("http://{addr}/v1"), handle)
+}
+
+async fn mock_media() -> (String, tokio::task::JoinHandle<()>) {
+    async fn image() -> Response {
+        let bytes = include_bytes!("fixtures/test.png");
+        Json(json!({"data": [{"b64_json": STANDARD.encode(bytes)}]})).into_response()
+    }
+
+    async fn create_video() -> Response {
+        Json(json!({"id": "task-1", "status": "queued"})).into_response()
+    }
+
+    async fn task_status(State(base): State<String>) -> Response {
+        Json(json!({
+            "id": "task-1",
+            "status": "completed",
+            "video_url": format!("{base}/clip.mp4")
+        }))
+        .into_response()
+    }
+
+    async fn create_seedance() -> Response {
+        Json(json!({"id": "seedance-1", "status": "queued"})).into_response()
+    }
+
+    async fn seedance_status(State(base): State<String>) -> Response {
+        Json(json!({
+            "id": "seedance-1",
+            "status": "succeeded",
+            "content": {"video_url": format!("{base}/clip.mp4")}
+        }))
+        .into_response()
+    }
+
+    async fn clip() -> Response {
+        (
+            [(axum::http::header::CONTENT_TYPE, "video/mp4")],
+            include_bytes!("fixtures/clip.mp4").to_vec(),
+        )
+            .into_response()
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let base = format!("http://{addr}");
+    let app = Router::new()
+        .route("/v1/images/generations", post(image))
+        .route("/v1/videos", post(create_video))
+        .route("/v1/videos/task-1", get(task_status))
+        .route("/v1/contents/generations/tasks", post(create_seedance))
+        .route(
+            "/v1/contents/generations/tasks/seedance-1",
+            get(seedance_status),
+        )
+        .route("/clip.mp4", get(clip))
+        .with_state(base);
     let handle = tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
@@ -609,6 +670,373 @@ async fn llm_prompt_generation_errors_and_snapshot() {
     let message = error["error"]["message"].as_str().unwrap();
     assert!(!message.contains("bad-key"));
     assert!(message.contains("401"));
+}
+
+#[tokio::test]
+async fn text_generation_routes_through_cli_kernel() {
+    let server = TestServer::spawn().await;
+    let idea = server
+        .create_idea("CLI 内核测试", "用本地 CLI 生成内容")
+        .await;
+    let project = server
+        .create_project("CLI 内核项目", vec![idea["id"].clone()])
+        .await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let dir_name = project["dirName"].as_str().unwrap().to_string();
+    let cli_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-cli.sh");
+    assert!(cli_path.is_file());
+
+    let (status, config) = server
+        .call(
+            "PUT",
+            "/api/config/kernel",
+            Some(json!({
+                "kernel": "claude",
+                "binary": cli_path.to_string_lossy(),
+                "args": [],
+                "timeoutSecs": 60
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{config}");
+    assert_eq!(config["textKernel"], "claude");
+
+    let (status, status_body) = server.call("GET", "/api/cli/status", None).await;
+    assert_eq!(status, StatusCode::OK);
+    let claude = status_body["kernels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|kernel| kernel["id"] == "claude")
+        .unwrap();
+    assert_eq!(claude["found"], true);
+    assert!(claude["path"].as_str().unwrap().ends_with("mock-cli.sh"));
+
+    let payload = json!({
+        "projectId": project_id,
+        "kind": "article",
+        "presetId": null,
+        "skillIds": [],
+        "instruction": "用 CLI 写一段测试"
+    });
+    let (status, generated) = server
+        .call("POST", "/api/llm/generate", Some(payload))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{generated}");
+    assert_eq!(generated["kernel"], "claude");
+    assert_eq!(generated["model"], "claude-cli");
+    let content = generated["content"].as_str().unwrap();
+    assert!(content.contains("Mock CLI 生成结果"), "{content}");
+    let expected_cwd = std::fs::canonicalize(server.ws().join("projects").join(&dir_name)).unwrap();
+    assert!(
+        content.contains(&format!("工作目录：{}", expected_cwd.display())),
+        "{content}"
+    );
+    let snapshot = generated["snapshotPath"].as_str().unwrap();
+    assert!(server.ws().join(snapshot).exists());
+
+    // Missing binaries produce an actionable CLI_NOT_FOUND.
+    let (status, _) = server
+        .call(
+            "PUT",
+            "/api/config/kernel",
+            Some(json!({
+                "kernel": "claude",
+                "binary": "/definitely/not/a/cli",
+                "args": [],
+                "timeoutSecs": 30
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, error) = server
+        .call(
+            "POST",
+            "/api/llm/generate",
+            Some(json!({
+                "projectId": project_id,
+                "kind": "script",
+                "presetId": null,
+                "skillIds": [],
+                "instruction": "测试缺失 CLI"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(error["error"]["code"], "CLI_NOT_FOUND");
+    assert!(error["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("claude"));
+
+    let (_, status_body) = server.call("GET", "/api/cli/status", None).await;
+    let claude = status_body["kernels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|kernel| kernel["id"] == "claude")
+        .unwrap();
+    assert_eq!(claude["found"], false);
+}
+
+#[tokio::test]
+async fn media_generation_saves_illustration_and_video() {
+    let server = TestServer::spawn().await;
+    let idea = server
+        .create_idea("视觉测试", "暖纸色、克制的编辑视觉")
+        .await;
+    let project = server
+        .create_project("视觉项目", vec![idea["id"].clone()])
+        .await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let dir_name = project["dirName"].as_str().unwrap().to_string();
+    let (media_url, _mock) = mock_media().await;
+
+    let (status, config) = server
+        .call(
+            "PUT",
+            "/api/config/media",
+            Some(json!({
+                "illustration": {
+                    "baseUrl": media_url,
+                    "apiKey": "media-secret",
+                    "model": "mock-image",
+                    "protocol": "openai",
+                    "createPath": "",
+                    "statusPath": "",
+                    "style": "暖纸色编辑插画"
+                },
+                "video": {
+                    "baseUrl": media_url,
+                    "apiKey": "media-secret",
+                    "model": "mock-video",
+                    "protocol": "openai",
+                    "createPath": "/videos",
+                    "statusPath": "",
+                    "style": "克制的纪实镜头"
+                },
+                "timeoutSecs": 30,
+                "pollIntervalSecs": 1,
+                "videoTimeoutSecs": 60
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{config}");
+    assert!(config["mediaGen"]["illustration"].get("apiKey").is_none());
+    assert_eq!(config["mediaGen"]["illustration"]["hasApiKey"], true);
+
+    let (status, illustration) = server
+        .call(
+            "POST",
+            "/api/llm/generate",
+            Some(json!({
+                "projectId": project_id,
+                "kind": "illustration",
+                "presetId": null,
+                "skillIds": [],
+                "instruction": "晨光下的书桌"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{illustration}");
+    assert_eq!(illustration["kernel"], "media");
+    assert_eq!(illustration["model"], "mock-image");
+    let asset = &illustration["asset"];
+    assert_eq!(asset["kind"], "illustration");
+    assert!(
+        asset["file"].as_str().unwrap().ends_with(".png"),
+        "{illustration}"
+    );
+    assert!(server
+        .ws()
+        .join(asset["relPath"].as_str().unwrap())
+        .exists());
+    let raw = server
+        .client
+        .get(format!(
+            "{}{}",
+            server.base,
+            asset["fileUrl"].as_str().unwrap()
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(raw.status(), StatusCode::OK);
+    assert!(raw.bytes().await.unwrap().len() > 20);
+    let snapshot = illustration["snapshotPath"].as_str().unwrap();
+    assert!(server.ws().join(snapshot).exists());
+
+    let (status, video) = server
+        .call(
+            "POST",
+            "/api/llm/generate",
+            Some(json!({
+                "projectId": project_id,
+                "kind": "video",
+                "presetId": null,
+                "skillIds": [],
+                "instruction": "一段书桌前的慢镜头"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{video}");
+    assert_eq!(video["kernel"], "media");
+    assert_eq!(video["model"], "mock-video");
+    assert!(video["asset"]["file"].as_str().unwrap().ends_with(".mp4"));
+    assert!(server
+        .ws()
+        .join(video["asset"]["relPath"].as_str().unwrap())
+        .exists());
+
+    // Both generated files are real project assets and carry media-gen provenance.
+    let project_dir = server.ws().join("projects").join(&dir_name);
+    let image_files = walk_files(&project_dir.join("illustration"))
+        .into_iter()
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("png"))
+        .count();
+    assert!(image_files >= 1);
+    let video_files = walk_files(&project_dir.join("video"))
+        .into_iter()
+        .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("mp4"))
+        .count();
+    assert!(video_files >= 1);
+    let sidecar = std::fs::read_to_string(
+        std::path::Path::new(server.ws()).join(asset["relPath"].as_str().unwrap()),
+    )
+    .unwrap();
+    assert!(sidecar.contains("media-gen"));
+    assert!(sidecar.contains("晨光下的书桌"));
+}
+
+#[tokio::test]
+async fn assistant_suggests_and_applies_asset_edits() {
+    let server = TestServer::spawn().await;
+    let idea = server.create_idea("助手测试", "需要一位懂项目的助手").await;
+    let project = server
+        .create_project("助手项目", vec![idea["id"].clone()])
+        .await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let (status, asset) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/assets"),
+            Some(json!({
+                "kind": "article",
+                "title": "原始文章",
+                "content": "# 原始文章\n\n这是原始正文。"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{asset}");
+    let asset_id = asset["id"].as_str().unwrap().to_string();
+
+    let cli_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-cli.sh");
+    let (status, _) = server
+        .call(
+            "PUT",
+            "/api/config/kernel",
+            Some(json!({
+                "kernel": "claude",
+                "binary": cli_path.to_string_lossy(),
+                "args": [],
+                "timeoutSecs": 60
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, suggested) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat"),
+            Some(json!({
+                "message": "帮我把正文改得更紧凑。",
+                "mode": "suggest"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{suggested}");
+    assert_eq!(suggested["kernel"], "claude");
+    assert_eq!(suggested["applied"], false);
+    assert_eq!(suggested["edits"][0]["assetId"], asset_id);
+    assert_eq!(suggested["messages"].as_array().unwrap().len(), 2);
+    let (_, original) = server
+        .call(
+            "GET",
+            &format!("/api/projects/{project_id}/assets/{asset_id}"),
+            None,
+        )
+        .await;
+    assert!(original["content"].as_str().unwrap().contains("原始正文"));
+
+    let (status, applied) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat"),
+            Some(json!({
+                "message": "直接覆盖它。",
+                "mode": "apply"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{applied}");
+    assert_eq!(applied["applied"], true);
+    assert_eq!(applied["messages"].as_array().unwrap().len(), 4);
+    let (_, updated) = server
+        .call(
+            "GET",
+            &format!("/api/projects/{project_id}/assets/{asset_id}"),
+            None,
+        )
+        .await;
+    assert!(updated["content"].as_str().unwrap().contains("助手修订版"));
+
+    let (status, history) = server
+        .call("GET", &format!("/api/projects/{project_id}/chat"), None)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(history["messages"].as_array().unwrap().len(), 4);
+    assert_eq!(history["kernel"], "claude");
+    let history_file = server
+        .ws()
+        .join("projects")
+        .join(project["dirName"].as_str().unwrap())
+        .join(".mediadesk/assistant/history.json");
+    assert!(history_file.exists());
+
+    let (status, _) = server
+        .call("DELETE", &format!("/api/projects/{project_id}/chat"), None)
+        .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(!history_file.exists());
+    let (_, history) = server
+        .call("GET", &format!("/api/projects/{project_id}/chat"), None)
+        .await;
+    assert_eq!(history["messages"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn media_generation_requires_configuration() {
+    let server = TestServer::spawn().await;
+    let project = server.create_project("未配置媒体项目", vec![]).await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    let (status, error) = server
+        .call(
+            "POST",
+            "/api/llm/generate",
+            Some(json!({
+                "projectId": project_id,
+                "kind": "illustration",
+                "presetId": null,
+                "skillIds": [],
+                "instruction": "测试未配置"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::PRECONDITION_FAILED);
+    assert_eq!(error["error"]["code"], "MEDIA_NOT_CONFIGURED");
 }
 
 #[tokio::test]

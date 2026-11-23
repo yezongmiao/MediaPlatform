@@ -4,6 +4,7 @@ import { useApp } from '../lib/app-context';
 import type { Asset, Kind, Project } from '../lib/types';
 import { KINDS, KIND_MAP } from '../lib/types';
 import { AssetCard } from '../components/AssetCard';
+import { AssistantPanel } from '../components/AssistantPanel';
 import { AssetEditor } from '../components/AssetEditor';
 import { CardStudio } from '../components/CardStudio';
 import { GenerateDialog } from '../components/GenerateDialog';
@@ -32,6 +33,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const [editorAsset, setEditorAsset] = useState<Asset | null>(null);
   const [createKind, setCreateKind] = useState<Kind | undefined>();
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [generateKind, setGenerateKind] = useState<Kind>('article');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [cardOpen, setCardOpen] = useState(false);
@@ -246,6 +248,9 @@ export function ProjectPage({ projectId }: { projectId: string }) {
           <div class="project-header-actions">
             <Button variant="primary" icon="wand" onClick={() => openGenerate()}>
               生成素材
+            </Button>
+            <Button variant="secondary" icon="spark" onClick={() => setAssistantOpen(true)}>
+              助手
             </Button>
             <Button variant="secondary" icon="code" loading={vscodeLoading} onClick={openVscode}>
               在 VSCode 打开
@@ -487,6 +492,16 @@ export function ProjectPage({ projectId }: { projectId: string }) {
           ) : null}
         </section>
       )}
+
+      <AssistantPanel
+        project={project}
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        onChanged={async () => {
+          await refresh();
+          await app.refreshProjects();
+        }}
+      />
 
       <GenerateDialog
         project={project}

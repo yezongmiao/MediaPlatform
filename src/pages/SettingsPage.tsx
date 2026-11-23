@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiError } from '../lib/api';
 import { useApp } from '../lib/app-context';
 import { FolderBrowser } from '../components/FolderBrowser';
+import { MediaSettings } from '../components/MediaSettings';
+import { TextKernelSettings } from '../components/TextKernelSettings';
 import { Icon } from '../components/Icon';
 import { Button, Field, InlineError, Modal, Segmented } from '../components/ui';
 import { copyText, formatBytes } from '../lib/format';
@@ -57,8 +59,21 @@ export function SettingsPage() {
   const [folderOpen, setFolderOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const llmSnapshot = useRef('');
 
   useEffect(() => {
+    // Kernel/media saves also refresh config. Do not wipe unsaved model edits
+    // unless the LLM section itself changed.
+    const snapshot = JSON.stringify([
+      config.llm.baseUrl,
+      config.llm.model,
+      config.llm.temperature,
+      config.llm.maxTokens,
+      config.llm.timeoutSecs,
+      config.llm.hasApiKey,
+    ]);
+    if (snapshot === llmSnapshot.current) return;
+    llmSnapshot.current = snapshot;
     setBaseUrl(config.llm.baseUrl);
     setModel(config.llm.model);
     setTemperature(config.llm.temperature);
@@ -154,7 +169,7 @@ export function SettingsPage() {
         <div>
           <p class="eyebrow">SETTINGS · 设置</p>
           <h1>把工具调成顺手的样子。</h1>
-          <p class="page-subtitle">工作区、模型与外观。所有配置只保存在本机。</p>
+          <p class="page-subtitle">工作区、文本内核、媒体模型与外观。所有配置只保存在本机。</p>
         </div>
       </header>
 
@@ -210,6 +225,8 @@ export function SettingsPage() {
             <code>.mediadesk/</code>。可以放进 Git、iCloud 或移动硬盘。
           </p>
         </section>
+
+        <TextKernelSettings />
 
         <section class="panel settings-card">
           <div class="settings-card-head">
@@ -341,6 +358,8 @@ export function SettingsPage() {
             密钥由本地 Rust 服务持有，浏览器前端只能看到「是否已配置」。生成失败时会展示服务商错误摘要，不会泄露密钥。
           </p>
         </section>
+
+        <MediaSettings />
 
         <section class="panel settings-card">
           <div class="settings-card-head">

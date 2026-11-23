@@ -48,6 +48,7 @@ export function GenerateDialog({
   const [showPrompt, setShowPrompt] = useState(false);
   const [compiling, setCompiling] = useState(false);
 
+  const isMedia = kind === 'illustration' || kind === 'video';
   const kindPresets = useMemo(
     () => app.data.presets.filter((preset) => preset.kind === kind),
     [app.data.presets, kind],
@@ -103,8 +104,8 @@ export function GenerateDialog({
   const payload = () => ({
     projectId: project.id,
     kind,
-    presetId: presetId || null,
-    skillIds,
+    presetId: isMedia ? null : presetId || null,
+    skillIds: isMedia ? [] : skillIds,
     instruction,
   });
 
@@ -117,10 +118,11 @@ export function GenerateDialog({
       const data = await api.generate(payload());
       setResult(data);
       setTitle(
-        extractTitle(
-          data.content,
-          `${kindLabel(kind)} · ${new Date().toLocaleDateString('zh-CN')}`,
-        ),
+        data.asset?.title ??
+          extractTitle(
+            data.content,
+            `${kindLabel(kind)} · ${new Date().toLocaleDateString('zh-CN')}`,
+          ),
       );
       setPreview(null);
     } catch (err) {
@@ -197,14 +199,38 @@ export function GenerateDialog({
   };
 
   const linkedIdeas = app.data.ideas.filter((idea) => project.ideaIds.includes(idea.id));
-  const configured = app.data.config.llm.hasApiKey;
+  const textKernel = app.data.config.textKernel ?? 'api';
+  const mediaProfile =
+    kind === 'illustration'
+      ? app.data.config.mediaGen?.illustration
+      : app.data.config.mediaGen?.video;
+  const mediaConfigured = Boolean(
+    mediaProfile?.baseUrl.trim() &&
+      mediaProfile?.model.trim() &&
+      (mediaProfile?.hasApiKey || /^http:\/\/(localhost|127\.0\.0\.1)/.test(mediaProfile.baseUrl)),
+  );
+  const configured =
+    isMedia ? mediaConfigured : textKernel === 'api' ? app.data.config.llm.hasApiKey : true;
+  const kernelLabel = isMedia
+    ? '媒体生成模型'
+    : textKernel === 'api'
+      ? 'API 大模型'
+      : textKernel === 'claude'
+        ? 'Claude Code CLI'
+        : textKernel === 'opencode'
+          ? 'OpenCode CLI'
+          : 'DeepSeek CLI';
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       title="生成素材"
-      subtitle={`${project.title} · 手动调用大模型，结果确认后才写入素材库`}
+      subtitle={
+        isMedia
+          ? `${project.title} · 调用媒体生成模型，成功后直接写入素材库`
+          : `${project.title} · 手动调用文本内核，结果确认后才写入素材库`
+      }
       size="full"
       class="generate-modal"
       footer={
@@ -214,21 +240,41 @@ export function GenerateDialog({
               重新生成
             </Button>
             <div class="modal-actions">
-              {kind === 'card' ? (
-                <Button
-                  variant="secondary"
-                  icon="cards"
-                  onClick={() => {
-                    onOpenCardStudio(result.content);
-                    onClose();
-                  }}
-                >
-                  去排版
-                </Button>
-              ) : null}
-              <Button variant="primary" icon="check" loading={saving} onClick={save}>
-                保存为素材
-              </Button>
+              {result.asset ? (
+                <>
+                  <Button variant="ghost" onClick={onClose}>
+                    关闭
+                  </Button>
+                  <Button
+                    variant="primary"
+                    icon="arrow-right"
+                    onClick={() => {
+                      onSaved(result.asset!.id);
+                      onClose();
+                    }}
+                  >
+                    查看并编辑
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {kind === 'card' ? (
+                    <Button
+                      variant="secondary"
+                      icon="cards"
+                      onClick={() => {
+                        onOpenCardStudio(result.content);
+                        onClose();
+                      }}
+                    >
+                      去排版
+                    </Button>
+                  ) : null}
+                  <Button variant="primary" icon="check" loading={saving} onClick={save}>
+                    保存为素材
+                  </Button>
+                </>
+              )}
             </div>
           </>
         ) : (
@@ -242,8 +288,8 @@ export function GenerateDialog({
               <Button variant="ghost" icon="copy" onClick={copyPrompt} loading={compiling}>
                 复制提示词
               </Button>
-              <Button variant="primary" icon="spark" onClick={generate} loading={loading}>
-                生成
+              <Button variant="primary" icon={isMedia ? 'image' : 'spark'} onClick={generate} loading={loading}>
+                {isMedia ? '生成并保存' : '生成'}
               </Button>
             </div>
           </>
@@ -266,20 +312,22 @@ export function GenerateDialog({
             ))}
           </div>
 
-          <Field label="创作预设" hint="决定结构、语气与输出规范">
-            <select
-              class="select"
-              value={presetId}
-              onChange={(e) => selectPreset((e.target as HTMLSelectElement).value)}
-            >
-              <option value="">不套用预设（使用通用规范）</option>
-              {kindPresets.map((preset) => (
-                <option value={preset.id} key={preset.id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {!isMedia ? (
+            <Field label="创作预设" hint="决定结构、语气与输出规范">
+              <select
+                class="select"
+                value={presetId}
+                onChange={(e) => selectPreset((e.target as HTMLSelectElement).value)}
+              >
+                <option value="">不套用预设（使用通用规范）</option>
+                {kindPresets.map((preset) => (
+                  <option value={preset.id} key={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
 
           <Field label="本次要求" hint="可留空，默认围绕项目主题创作">
             <textarea
@@ -299,44 +347,50 @@ export function GenerateDialog({
             <p>
               项目简介、{linkedIdeas.length} 条关联灵感、已有素材标题都会发送给模型。
             </p>
+            <span class={`generate-kernel-pill ${isMedia ? 'is-media' : ''}`}>
+              <Icon name={isMedia ? 'image' : textKernel === 'api' ? 'spark' : 'code'} size={13} />
+              {kernelLabel}
+            </span>
           </div>
 
           <button class={`advanced-toggle ${advanced ? 'is-open' : ''}`} onClick={() => setAdvanced(!advanced)}>
             <span>
               <Icon name="sliders" size={15} />
-              技能与提示词
-              <span class="advanced-count">{skillIds.length}</span>
+              {isMedia ? '视觉提示词' : '技能与提示词'}
+              {!isMedia ? <span class="advanced-count">{skillIds.length}</span> : null}
             </span>
             <Icon name="chevron-down" size={15} />
           </button>
 
           {advanced ? (
             <div class="generate-advanced">
-              <div class="advanced-block">
-                <div class="advanced-head">
-                  <strong>已加载技能</strong>
-                  <span>{availableSkills.length} 个可用</span>
-                </div>
-                {availableSkills.length ? (
-                  <div class="skill-checks">
-                    {availableSkills.map((skill) => (
-                      <label class={`skill-check ${skillIds.includes(skill.id) ? 'is-checked' : ''}`} key={skill.id}>
-                        <input
-                          type="checkbox"
-                          checked={skillIds.includes(skill.id)}
-                          onChange={() => toggleSkill(skill.id)}
-                        />
-                        <span>
-                          <strong>{skill.name}</strong>
-                          <small>{skill.description}</small>
-                        </span>
-                      </label>
-                    ))}
+              {!isMedia ? (
+                <div class="advanced-block">
+                  <div class="advanced-head">
+                    <strong>已加载技能</strong>
+                    <span>{availableSkills.length} 个可用</span>
                   </div>
-                ) : (
-                  <p class="muted-text">还没有适用于{kindLabel(kind)}的技能。</p>
-                )}
-              </div>
+                  {availableSkills.length ? (
+                    <div class="skill-checks">
+                      {availableSkills.map((skill) => (
+                        <label class={`skill-check ${skillIds.includes(skill.id) ? 'is-checked' : ''}`} key={skill.id}>
+                          <input
+                            type="checkbox"
+                            checked={skillIds.includes(skill.id)}
+                            onChange={() => toggleSkill(skill.id)}
+                          />
+                          <span>
+                            <strong>{skill.name}</strong>
+                            <small>{skill.description}</small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <p class="muted-text">还没有适用于{kindLabel(kind)}的技能。</p>
+                  )}
+                </div>
+              ) : null}
               <div class="advanced-block">
                 <div class="advanced-head">
                   <strong>编译后的提示词</strong>
@@ -356,7 +410,11 @@ export function GenerateDialog({
                     </Button>
                   </div>
                 ) : (
-                  <p class="muted-text">编译后可复制到任意模型使用，不消耗 API。</p>
+                  <p class="muted-text">
+                    {isMedia
+                      ? '查看实际发给媒体模型的视觉提示词；不调用接口。'
+                      : '编译后可复制到任意模型使用，不消耗 API。'}
+                  </p>
                 )}
               </div>
             </div>
@@ -365,7 +423,11 @@ export function GenerateDialog({
           {!configured ? (
             <div class="notice notice-warn">
               <Icon name="alert" size={16} />
-              <p>尚未配置 API Key。你仍可以复制提示词，或前往设置接入 OpenAI 兼容服务。</p>
+              <p>
+                {isMedia
+                  ? `尚未配置${kindLabel(kind)}生成模型。请先到设置中接入图像/视频接口。`
+                  : '尚未配置 API Key。你仍可以复制提示词，或前往设置接入 OpenAI 兼容服务。'}
+              </p>
               <button class="text-link" onClick={() => { onClose(); navigate('/settings'); }}>
                 去设置
               </button>
@@ -376,7 +438,7 @@ export function GenerateDialog({
             <div class="notice notice-error" role="alert">
               <Icon name="alert" size={16} />
               <p>{error}</p>
-              {errorCode === 'LLM_NOT_CONFIGURED' || errorCode === 'LLM_REQUEST_FAILED' ? (
+              {['LLM_NOT_CONFIGURED', 'LLM_REQUEST_FAILED', 'CLI_NOT_FOUND', 'CLI_FAILED', 'CLI_TIMEOUT', 'MEDIA_NOT_CONFIGURED', 'MEDIA_GEN_FAILED'].includes(errorCode) ? (
                 <button class="text-link" onClick={() => { onClose(); navigate('/settings'); }}>
                   检查设置
                 </button>
@@ -388,22 +450,32 @@ export function GenerateDialog({
         <div class="generate-result">
           {loading ? (
             <div class="generate-loading">
-              <span class="orb-loading"><Icon name="spark" size={26} /></span>
-              <h3>正在组织素材…</h3>
-              <p>模型正在读取项目上下文、预设与技能。通常需要 10–60 秒。</p>
+              <span class="orb-loading"><Icon name={isMedia ? 'image' : 'spark'} size={26} /></span>
+              <h3>{isMedia ? '正在生成并保存媒体…' : '正在组织素材…'}</h3>
+              <p>
+                {isMedia
+                  ? '媒体模型正在生成文件；视频任务可能需要轮询，完成后会自动写入项目。'
+                  : `正在调用${kernelLabel}读取项目上下文、预设与技能。通常需要 10–60 秒。`}
+              </p>
               <span class="loading-bar"><span /></span>
             </div>
           ) : result ? (
-            <div class="result-sheet">
+            <div class={`result-sheet ${result.asset ? 'is-media-result' : ''}`}>
               <div class="result-head">
                 <div>
-                  <span class="eyebrow">DRAFT · {kindLabel(kind)}</span>
-                  <input
-                    class="result-title-input"
-                    value={title}
-                    aria-label="素材标题"
-                    onInput={(e) => setTitle((e.target as HTMLInputElement).value)}
-                  />
+                  <span class="eyebrow">
+                    {result.asset ? 'MEDIA · 已保存' : 'DRAFT'} · {kindLabel(kind)}
+                  </span>
+                  {result.asset ? (
+                    <h3 class="result-media-title">{result.asset.title}</h3>
+                  ) : (
+                    <input
+                      class="result-title-input"
+                      value={title}
+                      aria-label="素材标题"
+                      onInput={(e) => setTitle((e.target as HTMLInputElement).value)}
+                    />
+                  )}
                 </div>
                 <div class="result-meta">
                   <span>{result.model}</span>
@@ -411,14 +483,30 @@ export function GenerateDialog({
                   {result.usage.totalTokens ? <span>{result.usage.totalTokens} tokens</span> : null}
                 </div>
               </div>
-              <div class="result-body">
-                <MarkdownView source={result.content} />
-              </div>
+              {result.asset ? (
+                <div class="result-media">
+                  {result.asset.kind === 'video' ? (
+                    <video src={result.asset.fileUrl} controls playsinline />
+                  ) : (
+                    <img src={result.asset.fileUrl} alt={result.asset.title} />
+                  )}
+                  <div class="result-media-meta">
+                    <span><Icon name="check" size={14} /> 已写入项目 {kindLabel(kind)} 目录</span>
+                    {result.snapshotPath ? <span><Icon name="file-text" size={14} /> 提示词已快照</span> : null}
+                  </div>
+                </div>
+              ) : (
+                <div class="result-body">
+                  <MarkdownView source={result.content} />
+                </div>
+              )}
               <div class="result-foot">
                 <div class="result-actions">
-                  <Button size="sm" variant="ghost" icon="copy" onClick={copyResult}>
-                    复制正文
-                  </Button>
+                  {result.asset ? null : (
+                    <Button size="sm" variant="ghost" icon="copy" onClick={copyResult}>
+                      复制正文
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
