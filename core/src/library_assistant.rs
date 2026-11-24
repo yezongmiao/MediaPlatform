@@ -10,12 +10,6 @@ use crate::llm;
 use crate::models::*;
 use crate::store::{self, atomic_write, now_iso};
 
-const MAX_MESSAGE_CHARS: usize = 8000;
-const MAX_HISTORY: usize = 40;
-const MAX_ACTIONS: usize = 16;
-const MAX_CONTENT_CHARS: usize = 50_000;
-const MAX_ITEM_CHARS: usize = 4_000;
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum LibraryAction {
@@ -175,8 +169,7 @@ async fn save_history(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).await?;
     }
-    let start = messages.len().saturating_sub(MAX_HISTORY);
-    let data = serde_json::to_vec_pretty(&messages[start..])
+    let data = serde_json::to_vec_pretty(messages)
         .map_err(|err| ApiError::internal(format!("序列化技能助手历史失败：{err}")))?;
     atomic_write(&path, &data).await
 }
@@ -187,14 +180,6 @@ pub async fn clear_history(workspace: &std::path::Path) -> ApiResult<()> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err.into()),
     }
-}
-
-fn truncate(text: &str, max: usize) -> String {
-    let mut out: String = text.chars().take(max).collect();
-    if text.chars().count() > max {
-        out.push_str("\n…（已截断）");
-    }
-    out
 }
 
 async fn build_context(
@@ -219,7 +204,7 @@ async fn build_context(
             skill.meta.name,
             skill.meta.description,
             skill.meta.applies_to.join(", "),
-            truncate(skill.content.trim(), MAX_ITEM_CHARS)
+            skill.content.trim()
         ));
     }
     if skills.is_empty() {
@@ -235,7 +220,7 @@ async fn build_context(
             preset.meta.kind,
             preset.meta.description,
             preset.meta.skill_ids.join(", "),
-            truncate(preset.content.trim(), MAX_ITEM_CHARS)
+            preset.content.trim()
         ));
     }
     if presets.is_empty() {
@@ -252,22 +237,19 @@ async fn build_context(
 3. updateSkill / updatePreset 必须提供完整替换字段；content 必须是完整正文，不是 diff。\n\
 4. 创建预设的 kind 只能是 article / script / illustration / card / video；skillIds 只能引用当前已有的技能 id。\n\
 5. 只有创作者明确要求时才删除或批量修改；不要擅自清空技能库。\n\
-6. 一次最多 16 个 action；没有动作时 actions 必须是空数组。\n\
+6. 没有动作时 actions 必须是空数组。\n\
 7. 每条 content 的字数控制在合理范围；技能是方法论，预设是某类素材的创作规范。\n\
 8. 直接、具体、克制，使用简体中文。\n\n";
     let mut user = String::new();
     if !history.is_empty() {
         user.push_str("# 最近对话\n");
-        for item in history.iter().rev().take(10).rev() {
+        for item in history.iter() {
             let role = if item.role == "user" {
                 "创作者"
             } else {
                 "助手"
             };
-            user.push_str(&format!(
-                "{role}：{}\n",
-                truncate(item.content.trim(), 1000)
-            ));
+            user.push_str(&format!("{role}：{}\n", item.content.trim()));
         }
         user.push('\n');
     }
@@ -305,17 +287,10 @@ fn parse_output(raw: &str) -> (String, Vec<LibraryAction>) {
             } else {
                 output.reply.trim().to_string()
             };
-            (
-                reply,
-                output.actions.into_iter().take(MAX_ACTIONS).collect(),
-            )
+            (reply, output.actions)
         }
         Err(_) => (raw.trim().to_string(), Vec::new()),
     }
-}
-
-fn content_too_long(content: &str) -> bool {
-    content.chars().count() > MAX_CONTENT_CHARS
 }
 
 async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> LibraryActionResult {
@@ -326,47 +301,35 @@ async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> Li
             description,
             applies_to,
             content,
-        } => {
-            if content_too_long(content) {
-                Err(ApiError::bad_request("技能正文过长"))
-            } else {
-                library::create_skill(
-                    workspace,
-                    SkillInput {
-                        name: name.clone(),
-                        description: description.clone(),
-                        applies_to: applies_to.clone(),
-                        content: content.clone(),
-                    },
-                )
-                .await
-                .map(|_| "技能已创建".to_string())
-            }
-        }
+        } => library::create_skill(
+            workspace,
+            SkillInput {
+                name: name.clone(),
+                description: description.clone(),
+                applies_to: applies_to.clone(),
+                content: content.clone(),
+            },
+        )
+        .await
+        .map(|_| "技能已创建".to_string()),
         LibraryAction::UpdateSkill {
             id,
             name,
             description,
             applies_to,
             content,
-        } => {
-            if content_too_long(content) {
-                Err(ApiError::bad_request("技能正文过长"))
-            } else {
-                library::update_skill(
-                    workspace,
-                    id,
-                    SkillInput {
-                        name: name.clone(),
-                        description: description.clone(),
-                        applies_to: applies_to.clone(),
-                        content: content.clone(),
-                    },
-                )
-                .await
-                .map(|_| "技能已更新".to_string())
-            }
-        }
+        } => library::update_skill(
+            workspace,
+            id,
+            SkillInput {
+                name: name.clone(),
+                description: description.clone(),
+                applies_to: applies_to.clone(),
+                content: content.clone(),
+            },
+        )
+        .await
+        .map(|_| "技能已更新".to_string()),
         LibraryAction::DeleteSkill { id } => library::delete_skill(workspace, id)
             .await
             .map(|_| "技能已移入回收站".to_string()),
@@ -376,24 +339,18 @@ async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> Li
             kind,
             skill_ids,
             content,
-        } => {
-            if content_too_long(content) {
-                Err(ApiError::bad_request("预设正文过长"))
-            } else {
-                library::create_preset(
-                    workspace,
-                    PresetInput {
-                        name: name.clone(),
-                        description: description.clone(),
-                        kind: kind.clone(),
-                        skill_ids: skill_ids.clone(),
-                        content: content.clone(),
-                    },
-                )
-                .await
-                .map(|_| "预设已创建".to_string())
-            }
-        }
+        } => library::create_preset(
+            workspace,
+            PresetInput {
+                name: name.clone(),
+                description: description.clone(),
+                kind: kind.clone(),
+                skill_ids: skill_ids.clone(),
+                content: content.clone(),
+            },
+        )
+        .await
+        .map(|_| "预设已创建".to_string()),
         LibraryAction::UpdatePreset {
             id,
             name,
@@ -401,25 +358,19 @@ async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> Li
             kind,
             skill_ids,
             content,
-        } => {
-            if content_too_long(content) {
-                Err(ApiError::bad_request("预设正文过长"))
-            } else {
-                library::update_preset(
-                    workspace,
-                    id,
-                    PresetInput {
-                        name: name.clone(),
-                        description: description.clone(),
-                        kind: kind.clone(),
-                        skill_ids: skill_ids.clone(),
-                        content: content.clone(),
-                    },
-                )
-                .await
-                .map(|_| "预设已更新".to_string())
-            }
-        }
+        } => library::update_preset(
+            workspace,
+            id,
+            PresetInput {
+                name: name.clone(),
+                description: description.clone(),
+                kind: kind.clone(),
+                skill_ids: skill_ids.clone(),
+                content: content.clone(),
+            },
+        )
+        .await
+        .map(|_| "预设已更新".to_string()),
         LibraryAction::DeletePreset { id } => library::delete_preset(workspace, id)
             .await
             .map(|_| "预设已移入回收站".to_string()),
@@ -502,9 +453,6 @@ async fn prepare(workspace: &std::path::Path, req: LibraryAssistantRequest) -> A
     let message = req.message.trim().to_string();
     if message.is_empty() {
         return Err(ApiError::bad_request("消息不能为空"));
-    }
-    if message.chars().count() > MAX_MESSAGE_CHARS {
-        return Err(ApiError::bad_request("单条消息过长"));
     }
     let config = store::load_config(workspace).await?;
     let history = load_history(workspace).await?.messages;

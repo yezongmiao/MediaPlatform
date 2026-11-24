@@ -10,12 +10,6 @@ use crate::llm;
 use crate::models::*;
 use crate::store::{self, atomic_write, now_iso, require_project};
 
-const MAX_MESSAGE_CHARS: usize = 8000;
-const MAX_HISTORY: usize = 40;
-const MAX_CONTEXT_ASSETS: usize = 24;
-const MAX_NEW_ASSETS: usize = 8;
-const MAX_NEW_ASSET_CHARS: usize = 50_000;
-
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AssistantOutput {
@@ -58,8 +52,7 @@ async fn save_history(
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).await?;
     }
-    let start = messages.len().saturating_sub(MAX_HISTORY);
-    let data = serde_json::to_vec_pretty(&messages[start..])
+    let data = serde_json::to_vec_pretty(messages)
         .map_err(|err| ApiError::internal(format!("序列化助手历史失败：{err}")))?;
     atomic_write(&path, &data).await
 }
@@ -74,14 +67,6 @@ pub async fn clear_history(workspace: &std::path::Path, project_id: &str) -> Api
     }
 }
 
-fn truncate(text: &str, max: usize) -> String {
-    let mut out: String = text.chars().take(max).collect();
-    if text.chars().count() > max {
-        out.push_str("\n…（已截断）");
-    }
-    out
-}
-
 async fn build_context(
     workspace: &std::path::Path,
     project_id: &str,
@@ -93,7 +78,7 @@ async fn build_context(
     let mut context = String::new();
     context.push_str(&format!("# 项目\n标题：{}\n", record.meta.title));
     if !record.brief.trim().is_empty() {
-        context.push_str(&format!("简介：{}\n", truncate(record.brief.trim(), 1200)));
+        context.push_str(&format!("简介：{}\n", record.brief.trim()));
     }
     context.push_str("\n# 素材概览\n");
     for kind in ASSET_KINDS {
@@ -107,9 +92,6 @@ async fn build_context(
     let mut count = 0;
     for kind in ASSET_KINDS {
         for asset in grouped.get(kind).into_iter().flatten() {
-            if count >= MAX_CONTEXT_ASSETS {
-                break;
-            }
             count += 1;
             context.push_str(&format!(
                 "\n## {} 《{}》\nassetId: {}\ntitle: {}\nkind: {}\nstatus: {}\ncontent:\n{}\n",
@@ -119,7 +101,7 @@ async fn build_context(
                 asset.meta.title,
                 asset.meta.kind,
                 asset.meta.status,
-                truncate(asset.content.trim(), 1600)
+                asset.content.trim()
             ));
         }
     }
@@ -137,8 +119,8 @@ async fn build_context(
 1. edits 只能修改上面列出的已有 assetId，禁止编造已有素材的 id。\n\
 2. edits.content 必须是完整替换内容，不要给 diff 或片段。只改标题时可省略 content。\n\
 3. 当用户明确要求新增素材，或某一类目录为空、确实需要创建时，使用 newAssets；新建素材不要填写 assetId。\n\
-4. newAssets 的 kind 只能是 article / script / card；一次最多 8 条；title 和 content 必须完整可保存。\n\
-5. 新建文卡图时，content 写卡片主张和补充文案；实际 PNG 仍需用户在「文卡图 Studio」导出。\n\
+4. newAssets 的 kind 只能是 article / script / card；title 和 content 必须完整可保存。\n\
+5. 新建文卡图时，content 写卡片主张和补充文案；实际 PNG 由「AI 文卡图」生成。\n\
 6. 没有修改或新建时，edits 与 newAssets 都必须是空数组。\n\
 7. 不编造事实、来源和数据；信息不足时在 reply 中提问。\n\
 8. 直接、具体、克制，使用简体中文。\n\
@@ -155,16 +137,13 @@ async fn build_context(
     let mut user = String::new();
     if !history.is_empty() {
         user.push_str("# 最近对话\n");
-        for message in history.iter().rev().take(10).rev() {
+        for message in history.iter() {
             let role = if message.role == "user" {
                 "创作者"
             } else {
                 "助手"
             };
-            user.push_str(&format!(
-                "{role}：{}\n",
-                truncate(message.content.trim(), 1200)
-            ));
+            user.push_str(&format!("{role}：{}\n", message.content.trim()));
         }
         user.push('\n');
     }
@@ -270,9 +249,6 @@ async fn prepare_chat(
     if message.is_empty() {
         return Err(ApiError::bad_request("消息不能为空"));
     }
-    if message.chars().count() > MAX_MESSAGE_CHARS {
-        return Err(ApiError::bad_request("单条消息过长"));
-    }
     let mode = req.mode.trim().to_ascii_lowercase();
     if !["suggest", "apply"].contains(&mode.as_str()) {
         return Err(ApiError::bad_request("助手模式必须是 suggest 或 apply"));
@@ -362,7 +338,7 @@ async fn create_assets(
 ) -> (Vec<AssistantCreate>, Vec<String>) {
     let mut created = Vec::new();
     let mut warnings = Vec::new();
-    for create in creates.iter().take(MAX_NEW_ASSETS) {
+    for create in creates.iter() {
         let kind = create.kind.trim().to_ascii_lowercase();
         if !["article", "script", "card"].contains(&kind.as_str()) {
             warnings.push(format!(
@@ -379,10 +355,6 @@ async fn create_assets(
         }
         if create.content.trim().is_empty() {
             warnings.push(format!("新建素材「{title}」缺少正文，已跳过。"));
-            continue;
-        }
-        if create.content.chars().count() > MAX_NEW_ASSET_CHARS {
-            warnings.push(format!("新建素材「{title}」内容过长，已跳过。"));
             continue;
         }
         match assets::create_asset(
@@ -409,11 +381,6 @@ async fn create_assets(
             }
             Err(err) => warnings.push(format!("新建「{title}」失败：{}", err.message)),
         }
-    }
-    if creates.len() > MAX_NEW_ASSETS {
-        warnings.push(format!(
-            "一次最多新建 {MAX_NEW_ASSETS} 条素材，超出的部分已忽略。"
-        ));
     }
     (created, warnings)
 }

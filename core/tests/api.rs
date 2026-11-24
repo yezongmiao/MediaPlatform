@@ -1272,6 +1272,62 @@ async fn library_assistant_streams_and_applies_actions_in_isolated_history() {
 }
 
 #[tokio::test]
+async fn assistant_context_includes_all_assets_and_full_contents() {
+    let server = TestServer::spawn().await;
+    let project = server.create_project("完整上下文项目", vec![]).await;
+    let project_id = project["id"].as_str().unwrap().to_string();
+    for index in 0..30 {
+        let (status, asset) = server
+            .call(
+                "POST",
+                &format!("/api/projects/{project_id}/assets"),
+                Some(json!({
+                    "kind": "article",
+                    "title": format!("上下文文章 {index}"),
+                    "content": format!("# 上下文文章 {index}\n\n{}", "完整上下文。".repeat(500))
+                })),
+            )
+            .await;
+        assert_eq!(status, StatusCode::OK, "{asset}");
+    }
+    let cli_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mock-context-cli.sh");
+    let (status, _) = server
+        .call(
+            "PUT",
+            "/api/config/kernel",
+            Some(json!({
+                "kernel": "claude",
+                "binary": cli_path.to_string_lossy(),
+                "args": [],
+                "timeoutSecs": 120
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, streamed) = server
+        .call(
+            "POST",
+            &format!("/api/projects/{project_id}/chat/stream"),
+            Some(json!({"message": "请确认上下文是否完整。", "mode": "suggest"})),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    let streamed = streamed.as_str().unwrap_or_default();
+    let marker = streamed
+        .split("prompt_chars=")
+        .nth(1)
+        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(0);
+    assert!(
+        marker > 60_000,
+        "expected full assistant context, got prompt_chars={marker}"
+    );
+}
+
+#[tokio::test]
 async fn assistant_stream_parses_claude_json_events() {
     let server = TestServer::spawn().await;
     let project = server.create_project("Claude 流式项目", vec![]).await;

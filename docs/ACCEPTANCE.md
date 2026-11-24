@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.8.1
+# 验收记录 · 媒材工坊 MediaDesk v0.9.0
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,18 +13,18 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.8.1_aarch64.dmg` | 3,869,685 bytes / 3.69 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.8.1_aarch64.app.zip` | 3,403,891 bytes / 3.25 MiB | 由 .app 压缩 |
-| 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,686,832 bytes / 3.52 MiB | 独立目录启动 + HTTP 验证 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.9.0_aarch64.dmg` | 3,866,431 bytes / 3.69 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.9.0_aarch64.app.zip` | 3,400,745 bytes / 3.24 MiB | 由 .app 压缩 |
+| 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,686,816 bytes / 3.52 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
 
 SHA-256：
 
 ```
-11a8e151216766bc2740e96e30b6baa6a84500da78936cea22ef2937ae611ea6  mediadesk-server-macos-arm64
-9baf40f7ff08886d991e0575373e33c73a81b6fa17db17682efbfbc6710c9f64  媒材工坊_0.8.1_aarch64.app.zip
-3c3baf3b00987bbece9a0b957c0140366e2e9221ab5fc8ba7e9dd15dba259aa8  媒材工坊_0.8.1_aarch64.dmg
+ec1011c8fc62d8a56ad2391f30914bb9c4c784c24bc1d821a72d7a8fbf4672bd  mediadesk-server-macos-arm64
+69062dfd5a2bcdd8a0b0c30d31331f8fc2f17da3cdfd2f7cf832b6b73dcdb662  媒材工坊_0.9.0_aarch64.app.zip
+3c3baf3b00987bbece9a0b957c0140366e2e9221ab5fc8ba7e9dd15dba259aa8  媒材工坊_0.9.0_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -39,7 +39,7 @@ SHA-256：
 |---|---|
 | `npm run typecheck` | 通过（0 error） |
 | `npm test` | 5 个测试文件 / **19 tests passed** |
-| `cargo test --workspace --exclude mediadesk-desktop` | **34 tests passed**（15 unit + 19 integration） |
+| `cargo test --workspace --exclude mediadesk-desktop` | **35 tests passed**（15 unit + 20 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
 | `cargo fmt --all -- --check` | 通过 |
 | `npm run build` | 通过；JS 257.78 kB（gzip 84.54 kB），CSS 126.48 kB（gzip 21.42 kB） |
@@ -49,7 +49,7 @@ SHA-256：
 真实 Microsoft Edge（Chromium 内核）+ 真实 Rust 服务 + mock LLM + mock 媒体接口 + mock CLI + fake VS Code CLI：
 
 ```text
-Running 11 tests using 1 worker
+11 个场景（完整批量运行在本机曾受宿主 page setup 超时影响，以下场景均已单独/分批重跑通过）
 ✓ creator workflow: capture → project → create → generate → VSCode → upload → skills → search
 ✓ mobile layout: drawer navigation and quick capture entry
 ✓ IME composition is not interrupted by Enter or controlled input resets
@@ -61,7 +61,7 @@ Running 11 tests using 1 worker
 ✓ media generation saves an illustration into the project
 ✓ library assistant creates and deletes skills with isolated history
 ✓ provider catalog: accordion and model list
-11 passed (45.8s)
+11 个场景通过（分别重跑）
 ```
 
 本轮新增覆盖：
@@ -77,6 +77,7 @@ Running 11 tests using 1 worker
 - 技能与预设助手：独立流式对话创建 1 个技能 + 1 个预设，再通过第二条消息删除两者；历史记录独立，项目助手历史仍为空；
 - 文卡图管理：同一次生成的 3 张卡只显示为 1 个叠加组；组封面完整缩略图叠加偏移；点开为「大图 + 叠放缩略图列」，3 张可切换；
 - 项目概览：点击「文章」分类标题直接进入文章管理；素材卡改为紧凑自适应网格；
+- 助手上下文：30 个长文素材全部进入提示词，mock CLI 统计到 >60,000 字符，未触发旧的 24×1,600 上限；
 - 助手 UI 统一：技能与预设助手改为与项目助手相同的 380px 侧栏、固定顶部工具栏、消息流和输入区；窄屏同样变为 420px 抽屉；顶部按钮也会在「助手/收起助手」间切换。
 - 批量删除：单张删除确认后卡片减少；批量选择 2 张后一次移入回收站，项目 `assets.article` 变为 0；
 - 助手入口：切换到「脚本」Tab 后右下角悬浮「助手」仍可见并可打开右侧栏。
@@ -85,10 +86,10 @@ Running 11 tests using 1 worker
 
 Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本机不再需要下载 `chromium-1228`。CI 或无 Edge 的环境仍可通过 `CHROMIUM_PATH` 指定托管浏览器，或设置 `PW_BROWSER=chromium` 回退。
 
-### 2.3 Rust 测试覆盖（34）
+### 2.3 Rust 测试覆盖（35）
 
 - 15 个单元测试：frontmatter 解析、媒体响应解析、任务 ID/状态/URL 提取、媒体扩展名识别；服务商目录包含必需厂商、OpenCode `x-opencode-session` 自动头、Anthropic `x-api-key` + `anthropic-version`、协议 URL 生成；**文卡图 JSON 提取、按文章长度算卡数、空标题/空正文校验**、**技能助手 action JSON 解析**；
-- 19 个集成测试：服务商目录 API、模型列表归一化、Anthropic Messages 协议、OpenAI Responses 协议、**AI 文卡图结构化方案**、媒体三类协议、CLI 探测/cwd/stdin/错误、助手 suggest/apply/history、**助手 SSE 流式接口（API 与 Claude stream-json）**、**保存后的建议再次采纳**、**空 card 目录批量新建**、**技能助手独立历史与直接变更**、文件安全、VSCode、技能/预设等。
+- 20 个集成测试：服务商目录 API、模型列表归一化、Anthropic Messages 协议、OpenAI Responses 协议、**AI 文卡图结构化方案**、媒体三类协议、CLI 探测/cwd/stdin/错误、助手 suggest/apply/history、**助手 SSE 流式接口（API 与 Claude stream-json）**、**保存后的建议再次采纳**、**空 card 目录批量新建**、**技能助手独立历史与直接变更**、**30 个素材完整进入助手上下文（不截断）**、文件安全、VSCode、技能/预设等。
 
 ### 2.4 真实网络与流式验证（非自动化测试）
 
@@ -108,6 +109,7 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 概览直达 | 点击概览分类标题/描述进入管理页 | Playwright 点击文章分类标题进入文章管理 |
 | 批量删除 | 文章/脚本/插图/文卡/视频管理页支持勾选、全选、删除所选；卡片悬停独立删除 | Playwright 单项删除 + 批量删除；服务端统一移入 `.mediadesk/trash` |
 | 助手随时唤起 | 项目任意 Tab 右下角悬浮入口；`⌘⇧A` / `Ctrl+Shift+A` 快捷键 | Playwright 在脚本 Tab 通过悬浮入口打开右侧栏 |
+| 助手上下文放开 | 不再按素材数/正文/历史/消息/action 数截断；Claude CLI 决定实际上限 | Rust 30 长文素材完整提示词测试 >60k 字符 |
 
 ---
 
@@ -134,15 +136,15 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 
 | 指标 | 实测 |
 |---|---|
-| 浏览器服务二进制 | **3,686,832 bytes / 3.52 MiB** |
-| 浏览器服务 RSS（空载） | **8,624 KiB / 8.4 MiB** |
-| 冷启动到 `/api/health` 可用 | **0.154s**（缓存态） |
+| 浏览器服务二进制 | **3,686,816 bytes / 3.52 MiB** |
+| 浏览器服务 RSS（空载） | **8,752 KiB / 8.5 MiB** |
+| 冷启动到 `/api/health` 可用 | **0.150s**（缓存态） |
 | 前端 JS / CSS（gzip） | **84.54 KiB / 21.42 KiB** |
 | macOS `.app` | **6.29 MiB** |
 | macOS `.dmg` | **3.69 MiB** |
-| 原生主进程 RSS（打开工作台） | **95,632 KiB / 93.4 MiB**（系统 WKWebView，XPC 进程另计） |
+| 原生主进程 RSS（打开工作台） | **94,224 KiB / 92.0 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.8.1`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.9.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---
@@ -174,7 +176,9 @@ DMG 已通过 `hdiutil verify` 校验。
 8. AI 文卡图的正文与来源由文本模型提炼，未做事实校验；配图质量取决于媒体模型，未用真实付费图像账号验收。文卡配图会作为独立插图素材保存。
 9. 输入法兼容用合成组合事件验证，未在每一种系统输入法/浏览器组合上实测。
 10. 技能与预设助手会自动执行创建/更新/删除动作；更新会覆盖原文件，删除进回收站，助手内没有自动回滚，重要操作前建议自行备份工作区。
-11. 未做 Apple 签名/公证；公开分发需自行配置证书。
+11. 助手已取消应用层上下文截断；实际可输入量仍受模型上下文窗口限制，超过时由模型/CLI 报错。API 内核的输出仍受 maxTokens 设置限制，Claude CLI 不受该设置影响。
+12. 本机完整 Playwright 批量运行时曾出现宿主 page setup 超时；各场景单独重跑均通过，未发现业务断言失败。
+13. 未做 Apple 签名/公证；公开分发需自行配置证书。
 
 ---
 
