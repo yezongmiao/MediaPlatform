@@ -21,7 +21,7 @@
 - **批量管理**：文章、脚本、插图、文卡与视频均可勾选批量删除；每张卡片悬停也有独立删除按钮，统一进回收站。
 - **概览直达**：项目概览中每一类素材的标题/描述可直接点击进入对应管理页。
 - **助手随时唤起**：项目所有页面右下角悬浮「助手」入口，快捷键 `⌘⇧A` / `Ctrl+Shift+A`。
-- **技能与预设助手**：独立上下文、流式对话，直接创建/更新/删除技能与预设，不读取项目素材。
+- **技能与预设助手**：与项目助手共用同一侧栏、工具栏、消息流和输入区；独立上下文、流式对话，直接创建/更新/删除技能与预设，不读取项目素材。
 - **本地优先**：无账号、无遥测、无外部字体/CDN；API Key 只存在本机 `.mediadesk/config.json`（Unix 下权限 0600）。
 
 ## 界面
@@ -107,8 +107,8 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `release/媒材工坊_0.8.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.69 MB |
-| `release/媒材工坊_0.8.0_aarch64.app.zip` | 免安装应用 | 3.25 MB |
+| `release/媒材工坊_0.8.1_aarch64.dmg` | 拖入 Applications 的安装包 | 3.69 MB |
+| `release/媒材工坊_0.8.1_aarch64.app.zip` | 免安装应用 | 3.25 MB |
 | `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.52 MB |
 
 实测：浏览器服务空载 RSS ≈ 8.7MB，冷启动 0.1–0.6s；原生主进程空载约 35MB、打开工作台约 94MB（系统 WKWebView，进程另计）。完整数据见 [验收记录](docs/ACCEPTANCE.md)。
@@ -259,7 +259,7 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 ## 设计原则
 
 - **文件是数据库**：没有 SQLite / 私有格式，LLM 与编辑器都能直接读懂。
-- **小体积、低占用**：Preact 前端约 257KB JS（gzip 约 84KB）；Rust 服务常驻内存只有几十 MB；桌面壳使用系统 WebView（WKWebView / WebView2），安装包不含 Chromium。
+- **小体积、低占用**：Preact 前端约 258KB JS（gzip 约 85KB）；Rust 服务常驻内存只有几十 MB；桌面壳使用系统 WebView（WKWebView / WebView2），安装包不含 Chromium。
 - **无外部运行时**：字体、图标、依赖全部本地；生产浏览器版是内嵌 UI 的单文件二进制。
 - **UI**：暖纸色、墨色、朱砂强调、宋体标题的编辑部质感；支持明暗主题与移动端布局。
 - **安全**：只监听 `127.0.0.1`；文件接口限定在 `projects/` 且拒绝隐藏文件、路径穿越与符号链接逃逸；Markdown 预览经 DOMPurify 清洗。

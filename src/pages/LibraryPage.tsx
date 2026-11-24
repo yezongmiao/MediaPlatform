@@ -27,7 +27,8 @@ export function LibraryPage() {
   }, [app.data.presets]);
 
   return (
-    <div class="page library-page">
+    <div class={`page library-page ${assistantOpen ? 'has-assistant' : ''}`}>
+      <div class="library-content">
       <header class="page-heading">
         <div>
           <p class="eyebrow">LIBRARY · 技能与预设</p>
@@ -38,11 +39,11 @@ export function LibraryPage() {
         </div>
         <div class="heading-actions">
           <Button
-            variant="secondary"
+            variant={assistantOpen ? 'primary' : 'secondary'}
             icon="spark"
-            onClick={() => setAssistantOpen(true)}
+            onClick={() => setAssistantOpen((value) => !value)}
           >
-            助手
+            {assistantOpen ? '收起助手' : '助手'}
           </Button>
           <Button
             variant="primary"
@@ -168,6 +169,8 @@ export function LibraryPage() {
         open={editingPreset !== null}
         onClose={() => setEditingPreset(null)}
       />
+
+      </div>
 
       {!assistantOpen ? (
         <button

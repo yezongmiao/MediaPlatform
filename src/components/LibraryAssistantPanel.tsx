@@ -180,7 +180,7 @@ export function LibraryAssistantPanel({
 
   return (
     <>
-      <div class="assistant-scrim library-assistant-scrim" onClick={onClose} />
+      <div class="assistant-scrim" onClick={onClose} />
       <aside class="assistant-sidebar library-assistant-sidebar" aria-label="技能与预设助手">
         <header class="assistant-sidebar-header">
           <div>
@@ -192,9 +192,13 @@ export function LibraryAssistantPanel({
         </header>
         <div class="assistant-layout">
           <div class="assistant-toolbar">
-            <div class="library-assistant-note">
-              <Icon name="layers" size={14} />
-              <span>助手会直接创建、修改或删除技能与预设；不会读取项目素材。</span>
+            <div class="assistant-mode">
+              <span class="assistant-mode-label">变更方式</span>
+              <span class="assistant-direct-mode">
+                <Icon name="check" size={12} />
+                直接执行
+              </span>
+              <span class="assistant-mode-hint">助手会直接写入技能与预设文件；不读取项目素材。</span>
             </div>
             <div class="assistant-toolbar-right">
               <span class="assistant-kernel">

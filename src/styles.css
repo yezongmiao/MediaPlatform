@@ -8286,90 +8286,40 @@ input[type="range"] {
   }
 }
 
-/* Library assistant */
-.library-assistant-sidebar .assistant-toolbar {
-  align-items: flex-start;
+/* Library assistant uses the same column/drawer layout as the project assistant. */
+.library-page.has-assistant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 22px;
+  align-items: start;
+  max-width: 1660px;
 }
 
-.library-assistant-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  max-width: 330px;
-  color: var(--muted);
-  font-size: 9.5px;
-  line-height: 1.55;
-}
-
-.library-assistant-note svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
-  color: var(--accent);
+.library-page.has-assistant .library-content {
+  min-width: 0;
 }
 
 .library-action-row strong {
   font-size: 10.5px;
 }
 
-@media (max-width: 1080px) {
-  .library-assistant-sidebar .assistant-toolbar {
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .library-assistant-sidebar .assistant-toolbar-right {
-    width: 100%;
-    justify-content: space-between;
-  }
+.assistant-direct-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
-/* Library assistant is a true overlay drawer, unlike the project grid column. */
-.library-assistant-scrim {
-  display: block;
-  position: fixed;
-  inset: 0;
-  z-index: 88;
-  background: rgba(22, 18, 13, 0.28);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-}
-
-.library-assistant-sidebar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 90;
-  width: min(700px, 100vw);
-  height: 100dvh;
-  max-height: none;
-  border-radius: 0;
-  border-top: 0;
-  border-right: 0;
-  border-bottom: 0;
-}
-
-.library-assistant-sidebar .assistant-sidebar-header {
-  padding: 18px 20px 14px;
-}
-
-@media (max-width: 720px) {
-  .library-assistant-sidebar {
-    width: 100vw;
-  }
-}
-
-@media (min-width: 1000px) {
-  .app-shell:has(.library-assistant-sidebar) .toast-host {
-    right: 724px;
-  }
-}
-
-@media (max-width: 999px) {
-  .app-shell:has(.library-assistant-sidebar) .toast-host {
-    top: auto;
-    bottom: 24px;
-    right: 24px;
+@media (max-width: 1359px) {
+  .library-page.has-assistant {
+    display: block;
+    max-width: var(--page-max);
   }
 }
 
