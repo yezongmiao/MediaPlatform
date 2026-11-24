@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.9.0
+# 验收记录 · 媒材工坊 MediaDesk v0.9.1
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,8 +13,8 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.9.0_aarch64.dmg` | 3,866,431 bytes / 3.69 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.9.0_aarch64.app.zip` | 3,400,745 bytes / 3.24 MiB | 由 .app 压缩 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.9.1_aarch64.dmg` | 3,866,718 bytes / 3.69 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.9.1_aarch64.app.zip` | 3,400,885 bytes / 3.24 MiB | 由 .app 压缩 |
 | 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,686,816 bytes / 3.52 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
@@ -22,9 +22,9 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 SHA-256：
 
 ```
-ec1011c8fc62d8a56ad2391f30914bb9c4c784c24bc1d821a72d7a8fbf4672bd  mediadesk-server-macos-arm64
-69062dfd5a2bcdd8a0b0c30d31331f8fc2f17da3cdfd2f7cf832b6b73dcdb662  媒材工坊_0.9.0_aarch64.app.zip
-3c3baf3b00987bbece9a0b957c0140366e2e9221ab5fc8ba7e9dd15dba259aa8  媒材工坊_0.9.0_aarch64.dmg
+d00b5be6e7be61f7588f605921402cdf60fd4a5562bc7acfe19f12afdc654794  mediadesk-server-macos-arm64
+f9717c747f1f9af9de164e0d6b94acb004319665276cf2f13b13586af7d263af  媒材工坊_0.9.1_aarch64.app.zip
+2f70ba1d8b65f63dcf1f3b6630006657eff125af7a698b24b5d14557b6603073  媒材工坊_0.9.1_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -144,7 +144,7 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | macOS `.dmg` | **3.69 MiB** |
 | 原生主进程 RSS（打开工作台） | **94,224 KiB / 92.0 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.9.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.9.1`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---

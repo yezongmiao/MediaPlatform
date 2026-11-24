@@ -288,7 +288,7 @@ export function AiCardStudio({
         </div>
 
         <aside class="ai-card-controls">
-          <Field label="取材文章" hint={sources.length ? '文章越长，生成的卡片越多（每约 500 字 1 张，最多 6 张）' : '项目还没有文章，将使用项目简介'}>
+          <Field label="取材文章" hint={sources.length ? '文章越长，生成的卡片越多（每约 500 字 1 张，最多 9 张）' : '项目还没有文章，将使用项目简介'}>
             <select class="select" value={sourceId} onChange={(e) => setSourceId((e.target as HTMLSelectElement).value)}>
               <option value="">不指定（使用项目简介）</option>
               {sources.map((source) => (

@@ -10,7 +10,7 @@ use crate::store::{self, require_project};
 
 const MAX_SOURCE_CHARS: usize = 16_000;
 const MAX_BODY_ITEMS: usize = 4;
-const MAX_CARDS: usize = 6;
+const MAX_CARDS: usize = 9;
 const CHARS_PER_CARD: usize = 500;
 
 fn desired_count(chars: usize) -> usize {
