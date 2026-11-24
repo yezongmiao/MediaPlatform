@@ -113,7 +113,12 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   };
 
   const openGenerate = (kind?: Kind) => {
-    setGenerateKind(kind ?? (tab !== 'overview' ? tab : 'article'));
+    const target = kind ?? (tab !== 'overview' ? tab : 'article');
+    if (target === 'card') {
+      setAiCardOpen(true);
+      return;
+    }
+    setGenerateKind(target);
     setGenerateOpen(true);
   };
 
@@ -422,10 +427,16 @@ export function ProjectPage({ projectId }: { projectId: string }) {
                         size={20}
                       />
                     </span>
-                    <div>
+                    <button
+                      type="button"
+                      class="kind-overview-title"
+                      onClick={() => setTab(kind.id)}
+                      aria-label={`进入${kind.label}管理`}
+                      title={`进入${kind.label}管理`}
+                    >
                       <h3>{kind.label}</h3>
                       <p>{kind.description}</p>
-                    </div>
+                    </button>
                     <span class="kind-count">{list.length}</span>
                   </div>
                   {list.length ? (
@@ -445,7 +456,8 @@ export function ProjectPage({ projectId }: { projectId: string }) {
                       进入管理 <Icon name="arrow-right" size={14} />
                     </button>
                     <button class="text-link" onClick={() => openGenerate(kind.id)}>
-                      <Icon name="wand" size={14} /> 生成
+                      <Icon name={kind.id === 'card' ? 'spark' : 'wand'} size={14} />
+                      {kind.id === 'card' ? 'AI 文卡图' : '生成'}
                     </button>
                   </div>
                 </section>
@@ -566,19 +578,20 @@ export function ProjectPage({ projectId }: { projectId: string }) {
                   {activeKind!.id === 'video' ? '新建笔记' : activeKind!.id === 'illustration' ? '新建提示词' : activeKind!.action}
                 </Button>
               ) : null}
-              {activeKind!.id === 'card' ? (
-                <Button variant="primary" icon="spark" onClick={() => setAiCardOpen(true)}>
-                  AI 文卡图
-                </Button>
-              ) : null}
               {activeKind!.upload ? (
                 <Button variant="secondary" icon="upload" loading={uploading && uploadKind === activeKind!.id} onClick={() => triggerUpload(activeKind!.id)}>
                   {activeKind!.id === 'video' ? '上传视频' : '上传图片'}
                 </Button>
               ) : null}
-              <Button variant="primary" icon="wand" onClick={() => openGenerate(activeKind!.id)}>
-                生成
-              </Button>
+              {activeKind!.id === 'card' ? (
+                <Button variant="primary" icon="spark" onClick={() => setAiCardOpen(true)}>
+                  AI 文卡图
+                </Button>
+              ) : (
+                <Button variant="primary" icon="wand" onClick={() => openGenerate(activeKind!.id)}>
+                  生成
+                </Button>
+              )}
             </div>
           </div>
 

@@ -285,7 +285,7 @@ export function GenerateDialog({
       <div class="generate-layout">
         <div class="generate-form">
           <div class="generate-kind-tabs">
-            {KINDS.map((item) => (
+            {KINDS.filter((item) => item.id !== 'card').map((item) => (
               <button
                 key={item.id}
                 class={`generate-kind ${kind === item.id ? 'is-active' : ''}`}

@@ -68,6 +68,16 @@ export const CARD_THEMES: CardTheme[] = [
     frame: 'rgba(64, 45, 20, 0.24)',
     grain: 'rgba(90, 60, 20, 0.04)',
   },
+  {
+    id: 'white',
+    name: '素白',
+    colors: ['#ffffff', '#f7f6f2'],
+    ink: '#1f1e1b',
+    muted: '#77736b',
+    accent: '#b6452d',
+    frame: 'rgba(31, 30, 27, 0.14)',
+    grain: 'rgba(0, 0, 0, 0.018)',
+  },
 ];
 
 export const SERIF_FONT =

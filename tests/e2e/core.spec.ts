@@ -450,7 +450,8 @@ test('asset management deletes one item and a batch', async ({ page, request }) 
   }
 
   await page.goto(`/projects/${project.id}`);
-  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await page.locator('.kind-overview-title').filter({ hasText: '文章' }).click();
+  await expect(page.locator('.project-tab.is-active')).toContainText('文章');
   await expect(page.locator('.asset-card')).toHaveCount(3);
 
   const firstCard = page.locator('.asset-card').filter({ hasText: '待删除 A' });
@@ -544,9 +545,10 @@ test('AI card studio generates an editorial PNG and saves it', async ({ page, re
   await page.getByRole('dialog').getByRole('button', { name: '取消' }).click();
   await expect(page.locator('.card-group-card')).toHaveCount(1);
   await expect(page.locator('.card-group-count')).toContainText('3 张');
+  await page.screenshot({ path: path.join(SHOTS, '18-card-group-grid.png') });
   await page.locator('.card-group-card').click();
   await expect(page.locator('.card-group-modal')).toBeVisible();
-  await expect(page.locator('.card-group-grid .card-group-item')).toHaveCount(3);
+  await expect(page.locator('.card-group-deck-item')).toHaveCount(3);
   await page.waitForTimeout(350);
   await page.screenshot({ path: path.join(SHOTS, '18-card-group.png') });
   await page.getByRole('contentinfo').getByRole('button', { name: '关闭' }).click();

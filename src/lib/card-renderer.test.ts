@@ -16,6 +16,7 @@ describe('card copy extraction', () => {
 
   it('exposes stable ratios and themes', () => {
     expect(CARD_RATIOS['3:4']).toMatchObject({ width: 1080, height: 1440 });
-    expect(CARD_THEMES).toHaveLength(5);
+    expect(CARD_THEMES).toHaveLength(6);
+    expect(CARD_THEMES.find((theme) => theme.id === 'white')?.colors[0]).toBe('#ffffff');
   });
 });

@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.7.0
+# 验收记录 · 媒材工坊 MediaDesk v0.8.0
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,8 +13,8 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.7.0_aarch64.dmg` | 3,864,605 bytes / 3.69 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.7.0_aarch64.app.zip` | 3,399,865 bytes / 3.24 MiB | 由 .app 压缩 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.8.0_aarch64.dmg` | 3,869,914 bytes / 3.69 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.8.0_aarch64.app.zip` | 3,404,125 bytes / 3.25 MiB | 由 .app 压缩 |
 | 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,686,832 bytes / 3.52 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
@@ -22,9 +22,9 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 SHA-256：
 
 ```
-7e938cef2cd22c68a3cddfb123acd9b619b11f9d5e1ddebaa097fdd9a7685b59  mediadesk-server-macos-arm64
-9e9fa68a058ba3c4f2531bc8bc82554c3d3f7e048c60ad65771c6eff256b245b  媒材工坊_0.7.0_aarch64.app.zip
-c8d5c83abd78a97e9c2132b862175e2a8ad295e7108b33d6bf759803e558b42f  媒材工坊_0.7.0_aarch64.dmg
+cc1946b3d87a03e6f5c66d32315d57c28ee1de173e91407df4277783878b79c3  mediadesk-server-macos-arm64
+88c5b71fe781301846c57e757cb9f3efd49f24cfe0f113bedf6500401ce918d7  媒材工坊_0.8.0_aarch64.app.zip
+1fe6143658d32f852c08c95d76f245a485d6b3f8c1fc9e37caeb2b0610e7def2  媒材工坊_0.8.0_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -42,7 +42,7 @@ c8d5c83abd78a97e9c2132b862175e2a8ad295e7108b33d6bf759803e558b42f  媒材工坊_0
 | `cargo test --workspace --exclude mediadesk-desktop` | **34 tests passed**（15 unit + 19 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
 | `cargo fmt --all -- --check` | 通过 |
-| `npm run build` | 通过；JS 256.52 kB（gzip 84.09 kB），CSS 122.23 kB（gzip 20.72 kB） |
+| `npm run build` | 通过；JS 257.57 kB（gzip 84.49 kB），CSS 127.15 kB（gzip 21.52 kB） |
 
 ### 2.2 Playwright 端到端
 
@@ -61,7 +61,7 @@ Running 11 tests using 1 worker
 ✓ media generation saves an illustration into the project
 ✓ library assistant creates and deletes skills with isolated history
 ✓ provider catalog: accordion and model list
-11 passed (53.8s)
+11 passed (49.6s)
 ```
 
 本轮新增覆盖：
@@ -75,6 +75,8 @@ Running 11 tests using 1 worker
 - 输入法组合：合成 `compositionstart` / `isComposing` 事件期间按 Enter 不会添加标签或触发保存，组合结束后文字仍能提交；
 - AI 文卡图：mock 文本模型返回 3 张结构化方案，mock 图像模型逐张返回 PNG → Canvas 生成 3 张 1080×1440 卡片 → 一次保存全部后 `assets.card` 有 3 个真实 `fileUrl`，同时保存 3 张 AI 底图插图；管理中显示为 1 个叠加缩略图组，点开有 3 张；
 - 技能与预设助手：独立流式对话创建 1 个技能 + 1 个预设，再通过第二条消息删除两者；历史记录独立，项目助手历史仍为空；
+- 文卡图管理：同一次生成的 3 张卡只显示为 1 个叠加组；组封面完整缩略图叠加偏移；点开为「大图 + 叠放缩略图列」，3 张可切换；
+- 项目概览：点击「文章」分类标题直接进入文章管理；素材卡改为紧凑自适应网格；
 - 批量删除：单张删除确认后卡片减少；批量选择 2 张后一次移入回收站，项目 `assets.article` 变为 0；
 - 助手入口：切换到「脚本」Tab 后右下角悬浮「助手」仍可见并可打开右侧栏。
 
@@ -101,6 +103,8 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 助手空目录新建 | 空 card 目录 → suggest 只返回 newAssets，文件数仍为 0 → apply 生成 3 个 `.md`；项目 card 计数为 3 |
 | AI 文卡图 | 文章 → 按长度拆多张 JSON 方案 → 逐张 mock 图像配图 → Canvas 1080×1440 → 一次保存全部 card PNG，管理页折叠为叠加组 |
 | 技能与预设助手 | 独立上下文、全局文本内核、SSE 流式；直接执行技能/预设创建、更新、删除 | Playwright 流式创建/删除技能与预设；Rust 独立历史与 action 执行 |
+| 文卡图组 | 同一次生成折叠为叠加缩略图组；完整图插值缩放；点击组查看大图与叠放缩略图 | Playwright 3 张卡片折叠为 1 组并切换 |
+| 概览直达 | 点击概览分类标题/描述进入管理页 | Playwright 点击文章分类标题进入文章管理 |
 | 批量删除 | 文章/脚本/插图/文卡/视频管理页支持勾选、全选、删除所选；卡片悬停独立删除 | Playwright 单项删除 + 批量删除；服务端统一移入 `.mediadesk/trash` |
 | 助手随时唤起 | 项目任意 Tab 右下角悬浮入口；`⌘⇧A` / `Ctrl+Shift+A` 快捷键 | Playwright 在脚本 Tab 通过悬浮入口打开右侧栏 |
 
@@ -130,14 +134,14 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 指标 | 实测 |
 |---|---|
 | 浏览器服务二进制 | **3,686,832 bytes / 3.52 MiB** |
-| 浏览器服务 RSS（空载） | **8,672 KiB / 8.5 MiB** |
-| 冷启动到 `/api/health` 可用 | **0.147s**（缓存态） |
-| 前端 JS / CSS（gzip） | **84.09 KiB / 20.72 KiB** |
+| 浏览器服务 RSS（空载） | **8,640 KiB / 8.4 MiB** |
+| 冷启动到 `/api/health` 可用 | **0.132s**（缓存态） |
+| 前端 JS / CSS（gzip） | **84.49 KiB / 21.52 KiB** |
 | macOS `.app` | **6.29 MiB** |
 | macOS `.dmg` | **3.69 MiB** |
-| 原生主进程 RSS（打开工作台） | **94,368 KiB / 92.2 MiB**（系统 WKWebView，XPC 进程另计） |
+| 原生主进程 RSS（打开工作台） | **95,488 KiB / 93.2 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.7.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.8.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---
