@@ -303,6 +303,36 @@ pub async fn generate_plan(
             image_warning,
         });
     }
+
+    // Put all successfully generated card illustrations into one visual group
+    // so the illustration manager can show them as a stack instead of loose files.
+    let image_assets: Vec<String> = cards
+        .iter()
+        .filter_map(|card| card.image_asset_id.clone())
+        .collect();
+    if !image_assets.is_empty() {
+        let group_id = format!("image-group-{}", store::new_id());
+        let group_title = format!(
+            "{} · AI 配图",
+            source_title.chars().take(60).collect::<String>()
+        );
+        let total = image_assets.len();
+        for (index, asset_id) in image_assets.iter().enumerate() {
+            if let Err(err) = assets::set_asset_group(
+                workspace,
+                project_id,
+                asset_id,
+                &group_id,
+                &group_title,
+                index + 1,
+                total,
+            )
+            .await
+            {
+                eprintln!("warning: could not group card illustration {asset_id}: {err}");
+            }
+        }
+    }
     if cards.is_empty() {
         warning = Some("没有生成可用的文卡图。".to_string());
     }

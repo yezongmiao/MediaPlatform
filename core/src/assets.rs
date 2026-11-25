@@ -475,6 +475,28 @@ pub async fn update_asset(
     read_asset_by_id(workspace, project_id, asset_id).await
 }
 
+/// Attach a generated image to a logical batch group. The same metadata is
+/// reused by card groups and illustration groups.
+pub async fn set_asset_group(
+    workspace: &Path,
+    project_id: &str,
+    asset_id: &str,
+    group_id: &str,
+    group_title: &str,
+    index: usize,
+    total: usize,
+) -> ApiResult<()> {
+    let (_, mut location) = find_asset_file(workspace, project_id, asset_id).await?;
+    location.meta.card_group_id = Some(group_id.to_string());
+    location.meta.card_group_title = Some(group_title.to_string());
+    location.meta.card_group_index = Some(index);
+    location.meta.card_group_total = Some(total);
+    location.meta.updated_at = now_iso();
+    let raw = frontmatter::render(&location.meta, &location.content)
+        .map_err(|e| ApiError::internal(format!("保存素材分组失败：{e}")))?;
+    atomic_write(&location.path, raw.as_bytes()).await
+}
+
 pub async fn delete_asset(workspace: &Path, project_id: &str, asset_id: &str) -> ApiResult<()> {
     let (record, location) = find_asset_file(workspace, project_id, asset_id).await?;
     let dir = location

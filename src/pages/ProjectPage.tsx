@@ -44,7 +44,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleteTargets, setDeleteTargets] = useState<Asset[]>([]);
   const [deleting, setDeleting] = useState(false);
-  const [cardGroupView, setCardGroupView] = useState<Asset[] | null>(null);
+  const [cardGroupView, setCardGroupView] = useState<{ assets: Asset[]; kind: 'card' | 'illustration' } | null>(null);
   const [vscodeLoading, setVscodeLoading] = useState(false);
   const [vscodeFallback, setVscodeFallback] = useState<VscodeFallback | null>(null);
   const [uploadKind, setUploadKind] = useState<Kind | null>(null);
@@ -615,17 +615,21 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             </div>
           ) : null}
 
-          {tab === 'card' && activeAssets.length ? (
+          {(tab === 'card' || tab === 'illustration') && activeAssets.length ? (
             <div class="asset-grid">
               {cardGroups.map((group) =>
                 group.grouped || group.assets.length > 1 ? (
                   <CardGroupCard
                     key={group.key}
                     assets={group.assets}
+                    kind={tab === 'illustration' ? 'illustration' : 'card'}
                     selectable={selectionMode}
                     selected={group.assets.every((asset) => selectedIds.has(asset.id))}
                     onSelect={() => toggleCardGroup(group.assets)}
-                    onOpen={() => setCardGroupView(group.assets)}
+                    onOpen={() => setCardGroupView({
+                      assets: group.assets,
+                      kind: tab === 'illustration' ? 'illustration' : 'card',
+                    })}
                     onDelete={() => setDeleteTargets(group.assets)}
                   />
                 ) : (
@@ -725,7 +729,8 @@ export function ProjectPage({ projectId }: { projectId: string }) {
       />
 
       <CardGroupViewer
-        assets={cardGroupView ?? []}
+        assets={cardGroupView?.assets ?? []}
+        kind={cardGroupView?.kind ?? 'card'}
         open={Boolean(cardGroupView)}
         onClose={() => setCardGroupView(null)}
         onOpenAsset={(asset) => {
@@ -737,7 +742,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
           deleteOne(asset);
         }}
         onDeleteGroup={() => {
-          const group = cardGroupView ?? [];
+          const group = cardGroupView?.assets ?? [];
           setCardGroupView(null);
           setDeleteTargets(group);
         }}

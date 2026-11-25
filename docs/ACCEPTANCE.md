@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.9.1
+# 验收记录 · 媒材工坊 MediaDesk v0.10.0
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,18 +13,18 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.9.1_aarch64.dmg` | 3,866,718 bytes / 3.69 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.9.1_aarch64.app.zip` | 3,400,885 bytes / 3.24 MiB | 由 .app 压缩 |
-| 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,686,816 bytes / 3.52 MiB | 独立目录启动 + HTTP 验证 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.10.0_aarch64.dmg` | 3,868,577 bytes / 3.69 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.10.0_aarch64.app.zip` | 3,403,547 bytes / 3.24 MiB | 由 .app 压缩 |
+| 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,703,344 bytes / 3.53 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
 
 SHA-256：
 
 ```
-d00b5be6e7be61f7588f605921402cdf60fd4a5562bc7acfe19f12afdc654794  mediadesk-server-macos-arm64
-f9717c747f1f9af9de164e0d6b94acb004319665276cf2f13b13586af7d263af  媒材工坊_0.9.1_aarch64.app.zip
-2f70ba1d8b65f63dcf1f3b6630006657eff125af7a698b24b5d14557b6603073  媒材工坊_0.9.1_aarch64.dmg
+ce7a1aea8b11df8f8f88ebb1880cf8af7cedbab683de77dbddea03143b4a2279  mediadesk-server-macos-arm64
+1921a4d98ccfc466cf78155657531cc113ae0cb2a10761642bf94be726b2e6a9  媒材工坊_0.10.0_aarch64.app.zip
+ab4eca1c0a8e00966210cf875db9f72c42872340237fccde1c9fbc13f4461778  媒材工坊_0.10.0_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -42,7 +42,7 @@ f9717c747f1f9af9de164e0d6b94acb004319665276cf2f13b13586af7d263af  媒材工坊_0
 | `cargo test --workspace --exclude mediadesk-desktop` | **35 tests passed**（15 unit + 20 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
 | `cargo fmt --all -- --check` | 通过 |
-| `npm run build` | 通过；JS 257.78 kB（gzip 84.54 kB），CSS 126.48 kB（gzip 21.42 kB） |
+| `npm run build` | 通过；JS 258.79 kB（gzip 84.87 kB），CSS 126.87 kB（gzip 21.48 kB） |
 
 ### 2.2 Playwright 端到端
 
@@ -61,7 +61,7 @@ f9717c747f1f9af9de164e0d6b94acb004319665276cf2f13b13586af7d263af  媒材工坊_0
 ✓ media generation saves an illustration into the project
 ✓ library assistant creates and deletes skills with isolated history
 ✓ provider catalog: accordion and model list
-11 个场景通过（分别重跑）
+11 个场景通过（分别/针对性重跑）
 ```
 
 本轮新增覆盖：
@@ -78,6 +78,7 @@ f9717c747f1f9af9de164e0d6b94acb004319665276cf2f13b13586af7d263af  媒材工坊_0
 - 文卡图管理：同一次生成的 3 张卡只显示为 1 个叠加组；组封面完整缩略图叠加偏移；点开为「大图 + 叠放缩略图列」，3 张可切换；
 - 项目概览：点击「文章」分类标题直接进入文章管理；素材卡改为紧凑自适应网格；
 - 助手上下文：30 个长文素材全部进入提示词，mock CLI 统计到 >60,000 字符，未触发旧的 24×1,600 上限；
+- AI 配图组：文卡图生成的 3 张配图在插图管理页折叠为 1 组，打开后按 `→` 切到 02/03、按 `←` 回到 01/03；
 - 助手 UI 统一：技能与预设助手改为与项目助手相同的 380px 侧栏、固定顶部工具栏、消息流和输入区；窄屏同样变为 420px 抽屉；顶部按钮也会在「助手/收起助手」间切换。
 - 批量删除：单张删除确认后卡片减少；批量选择 2 张后一次移入回收站，项目 `assets.article` 变为 0；
 - 助手入口：切换到「脚本」Tab 后右下角悬浮「助手」仍可见并可打开右侧栏。
@@ -110,6 +111,7 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 批量删除 | 文章/脚本/插图/文卡/视频管理页支持勾选、全选、删除所选；卡片悬停独立删除 | Playwright 单项删除 + 批量删除；服务端统一移入 `.mediadesk/trash` |
 | 助手随时唤起 | 项目任意 Tab 右下角悬浮入口；`⌘⇧A` / `Ctrl+Shift+A` 快捷键 | Playwright 在脚本 Tab 通过悬浮入口打开右侧栏 |
 | 助手上下文放开 | 不再按素材数/正文/历史/消息/action 数截断；Claude CLI 决定实际上限 | Rust 30 长文素材完整提示词测试 >60k 字符 |
+| AI 配图组 | 同批配图折叠为配图组，叠加缩略图 + 大图预览，支持键盘左右切换 | Playwright 3 张配图折叠并 `←` / `→` 切换 |
 
 ---
 
@@ -136,15 +138,15 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 
 | 指标 | 实测 |
 |---|---|
-| 浏览器服务二进制 | **3,686,816 bytes / 3.52 MiB** |
-| 浏览器服务 RSS（空载） | **8,752 KiB / 8.5 MiB** |
-| 冷启动到 `/api/health` 可用 | **0.150s**（缓存态） |
-| 前端 JS / CSS（gzip） | **84.54 KiB / 21.42 KiB** |
+| 浏览器服务二进制 | **3,703,344 bytes / 3.53 MiB** |
+| 浏览器服务 RSS（空载） | **8,688 KiB / 8.5 MiB** |
+| 冷启动到 `/api/health` 可用 | **0.164s**（缓存态） |
+| 前端 JS / CSS（gzip） | **84.87 KiB / 21.48 KiB** |
 | macOS `.app` | **6.29 MiB** |
 | macOS `.dmg` | **3.69 MiB** |
-| 原生主进程 RSS（打开工作台） | **94,224 KiB / 92.0 MiB**（系统 WKWebView，XPC 进程另计） |
+| 原生主进程 RSS（打开工作台） | **94,944 KiB / 92.7 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.9.1`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.10.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---

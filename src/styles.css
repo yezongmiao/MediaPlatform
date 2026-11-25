@@ -8644,3 +8644,28 @@ input[type="range"] {
   top: 50%;
   transform: translate(-50%, -50%) scale(1);
 }
+
+/* Illustration groups reuse the card stack with a wider preview deck. */
+.illustration-group-card .card-group-stack .card-group-layer {
+  aspect-ratio: 1 / 1;
+}
+
+.card-group-preview-image.is-illustration {
+  aspect-ratio: 4 / 3;
+}
+
+.card-group-deck-item.is-illustration {
+  width: 138px;
+  aspect-ratio: 4 / 3;
+}
+
+.card-group-preview-image.is-illustration img,
+.card-group-deck-item.is-illustration img {
+  object-fit: contain;
+}
+
+@media (max-width: 640px) {
+  .card-group-deck-item.is-illustration {
+    width: 108px;
+  }
+}

@@ -3,12 +3,19 @@ import { relativeTime } from '../lib/format';
 import { Badge } from './ui';
 import { Icon } from './Icon';
 
-function groupTitle(assets: Asset[]): string {
-  return assets[0]?.cardGroupTitle || assets[0]?.title || 'AI 文卡图组';
+export type AssetGroupKind = 'card' | 'illustration';
+
+function groupTitle(assets: Asset[], kind: AssetGroupKind): string {
+  return (
+    assets[0]?.cardGroupTitle ||
+    assets[0]?.title ||
+    (kind === 'illustration' ? 'AI 配图组' : 'AI 文卡图组')
+  );
 }
 
 export function CardGroupCard({
   assets,
+  kind = 'card',
   onOpen,
   selected = false,
   selectable = false,
@@ -16,6 +23,7 @@ export function CardGroupCard({
   onDelete,
 }: {
   assets: Asset[];
+  kind?: AssetGroupKind;
   onOpen: () => void;
   selected?: boolean;
   selectable?: boolean;
@@ -28,6 +36,10 @@ export function CardGroupCard({
   const images = ordered.filter((asset) => asset.fileUrl);
   const front = images[0];
   const first = ordered[0];
+  const isIllustration = kind === 'illustration';
+  const label = isIllustration ? '配图组' : '文卡图组';
+  const kindLabel = isIllustration ? 'AI 配图' : 'AI 文卡图';
+  const title = groupTitle(ordered, kind);
   const summary = ordered
     .slice(0, 3)
     .map((asset) => asset.title)
@@ -35,7 +47,7 @@ export function CardGroupCard({
 
   return (
     <article
-      class={`asset-card card-group-card ${selected ? 'is-selected' : ''}`}
+      class={`asset-card card-group-card ${isIllustration ? 'illustration-group-card' : ''} ${selected ? 'is-selected' : ''}`}
       onClick={onOpen}
       tabIndex={0}
       onKeyDown={(event) => {
@@ -58,7 +70,7 @@ export function CardGroupCard({
         ))}
         {!front ? (
           <div class="card-group-empty">
-            <Icon name="cards" size={26} />
+            <Icon name={isIllustration ? 'image' : 'cards'} size={26} />
           </div>
         ) : null}
         <div class="asset-card-tools">
@@ -67,7 +79,7 @@ export function CardGroupCard({
               <input
                 type="checkbox"
                 checked={selected}
-                aria-label={`选择文卡图组：${groupTitle(ordered)}`}
+                aria-label={`选择${label}：${title}`}
                 onChange={(event) => {
                   event.stopPropagation();
                   onSelect?.();
@@ -79,7 +91,7 @@ export function CardGroupCard({
             <button
               type="button"
               class="asset-delete"
-              aria-label={`删除文卡图组：${groupTitle(ordered)}`}
+              aria-label={`删除${label}：${title}`}
               title="删除整组"
               onClick={(event) => {
                 event.stopPropagation();
@@ -94,18 +106,18 @@ export function CardGroupCard({
           <Icon name="layers" size={12} /> {ordered.length} 张
         </span>
         <div class="asset-card-badges">
-          {first ? (
-            <Badge tone="neutral">文卡图组</Badge>
-          ) : null}
+          {first ? <Badge tone="neutral">{label}</Badge> : null}
         </div>
       </div>
       <div class="asset-card-body">
         <div class="asset-card-meta">
-          <span class="asset-kind-label" style={{ color: 'var(--kind-card)' }}>AI 文卡图</span>
+          <span class="asset-kind-label" style={{ color: isIllustration ? 'var(--kind-illustration)' : 'var(--kind-card)' }}>
+            {kindLabel}
+          </span>
           <span>{first ? relativeTime(first.updatedAt) : ''}</span>
         </div>
-        <h3>{groupTitle(ordered)}</h3>
-        <p>{summary || '一次生成的文卡图组'}</p>
+        <h3>{title}</h3>
+        <p>{summary || (isIllustration ? '一次生成的配图组' : '一次生成的文卡图组')}</p>
       </div>
     </article>
   );
