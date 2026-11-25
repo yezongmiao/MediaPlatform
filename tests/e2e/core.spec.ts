@@ -443,6 +443,59 @@ test('project editor inputs keep the caret while editing', async ({ page, reques
   await expect(body).toHaveValue('第一行内X容\n第二行内容');
 });
 
+test('ideas grid keeps equal card heights', async ({ page, request }) => {
+  for (let index = 1; index <= 5; index += 1) {
+    const created = await request.post('/api/ideas', {
+      data: {
+        title: `栅格测试 ${index}`,
+        content:
+          index % 2 === 0
+            ? `这是第 ${index} 条较短的想法。`
+            : `这是第 ${index} 条较长的想法。${'内容'.repeat(index * 12)}`,
+        tags: ['栅格'],
+      },
+    });
+    expect(created.ok()).toBeTruthy();
+  }
+
+  await page.goto('/ideas');
+  await page.getByPlaceholder('搜索想法…').fill('栅格测试');
+  await expect(page.locator('.idea-card')).toHaveCount(5);
+  const boxes = await page.locator('.idea-card').evaluateAll((elements) =>
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { top: Math.round(rect.top), height: Math.round(rect.height) };
+    }),
+  );
+  expect(new Set(boxes.map((box) => box.height)).size).toBe(1);
+  expect(boxes[0].top).toBe(boxes[1].top);
+  await page.screenshot({ path: path.join(SHOTS, '21-ideas-grid.png') });
+});
+
+test('tag input commits the current DOM value on blur', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('.sidebar .quick-capture-trigger').click();
+  const dialog = page.getByRole('dialog');
+  const tagInput = dialog.getByPlaceholder('输入标签后按回车');
+  await tagInput.evaluate((element, value) => {
+    const input = element as HTMLInputElement;
+    input.focus();
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        isComposing: true,
+        inputType: 'insertCompositionText',
+        data: value,
+      }),
+    );
+  }, '失焦标签');
+  await dialog.getByPlaceholder('给这个想法一个名字').click();
+  await expect(dialog.locator('.tag').filter({ hasText: '失焦标签' })).toHaveCount(1);
+});
+
 test('switch workspace from settings and restore it', async ({ page, request }) => {
   const altWorkspace = path.join(ROOT, 'artifacts/e2e-alt-workspace');
   fs.rmSync(altWorkspace, { recursive: true, force: true });

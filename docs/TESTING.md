@@ -19,6 +19,7 @@
 - `IME composition is not interrupted by Enter or controlled input resets`
 - `project editor inputs keep the caret and survive a missing compositionend`
 - `project editor inputs keep the caret while editing`
+- `tag input commits the current DOM value on blur`
 
 覆盖：
 
@@ -31,7 +32,8 @@
 4. 项目素材编辑器标题在普通输入时保持中间光标（`abcd` → 光标移到 `ab|cd` → 输入 `X` 得到 `abXcd`）；
 5. 同样的“缺失 compositionend”场景发生在**项目素材编辑器标题**时，失焦后保存写回正确标题；
 6. 标签输入失焦使用输入框当前 DOM 值提交，不依赖旧 state；
-7. 标题和正文 textarea 在中间光标位置插入字符都不会跳到末尾。
+7. 标题和正文 textarea 在中间光标位置插入字符都不会跳到末尾；
+8. 标签输入只有 `compositionstart`、没有 `compositionend` 时直接失焦，仍按输入框当前 DOM 值提交标签。
 
 运行：
 
