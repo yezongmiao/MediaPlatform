@@ -8716,3 +8716,21 @@ input[type="range"] {
     grid-template-columns: 1fr;
   }
 }
+
+/* Every idea occupies the same grid track, so short and long notes have the
+   same outer size; only the clamped text inside differs. */
+.ideas-masonry {
+  grid-auto-rows: 1fr;
+}
+
+.idea-card {
+  min-height: 220px;
+}
+
+.idea-card-main h3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(2 * 1.42em);
+}

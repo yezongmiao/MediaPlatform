@@ -49,11 +49,12 @@ SHA-256：
 真实 Microsoft Edge（Chromium 内核）+ 真实 Rust 服务 + mock LLM + mock 媒体接口 + mock CLI + fake VS Code CLI：
 
 ```text
-12 个场景（完整批量运行在本机曾受宿主 page setup 超时影响，以下场景均已单独/针对性重跑通过）
+13 个场景（完整批量运行在本机曾受宿主 page setup 超时影响，以下场景均已单独/针对性重跑通过）
 ✓ creator workflow: capture → project → create → generate → VSCode → upload → skills → search
 ✓ mobile layout: drawer navigation and quick capture entry
 ✓ IME composition is not interrupted by Enter or controlled input resets
 ✓ project editor inputs keep the caret and survive a missing compositionend
+✓ project editor inputs keep the caret while editing
 ✓ switch workspace from settings and restore it
 ✓ CLI text kernel and project assistant edits
 ✓ assistant creates new card assets in an empty directory
@@ -62,7 +63,7 @@ SHA-256：
 ✓ media generation saves an illustration into the project
 ✓ library assistant creates and deletes skills with isolated history
 ✓ provider catalog: accordion and model list
-12 个场景通过（分别/针对性重跑）
+13 个场景通过（分别/针对性重跑）
 ```
 
 本轮新增覆盖：
