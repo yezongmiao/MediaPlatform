@@ -410,6 +410,15 @@ export interface VscodeResult {
   message: string;
 }
 
+export interface DshResult {
+  ok: boolean;
+  url: string;
+  workspace: string;
+  command: string;
+  filesWritten: string[];
+  message: string;
+}
+
 export interface SearchResult {
   query: string;
   ideas: Idea[];

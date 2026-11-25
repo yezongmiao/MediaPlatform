@@ -26,6 +26,7 @@ use crate::assistant;
 use crate::card_gen;
 use crate::cli;
 use crate::context;
+use crate::dsh;
 use crate::error::{ApiError, ApiResult};
 use crate::library;
 use crate::library_assistant;
@@ -145,6 +146,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/api/projects/{id}/rescan", post(rescan_project))
         .route("/api/projects/{id}/vscode", post(open_vscode))
+        .route("/api/projects/{id}/dsh", post(open_dsh))
         .route("/api/projects/{id}/context", post(prepare_context))
         .route("/api/projects/{id}/assets", post(create_asset))
         .route(
@@ -593,6 +595,13 @@ async fn open_vscode(
     Ok(Json(
         context::launch(&state.workspace(), &id, state.code_bin.as_deref()).await?,
     ))
+}
+
+async fn open_dsh(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> ApiResult<Json<DshResult>> {
+    Ok(Json(dsh::launch(&state.workspace(), &id).await?))
 }
 
 async fn prepare_context(

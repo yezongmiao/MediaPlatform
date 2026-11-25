@@ -876,6 +876,17 @@ pub struct VscodeResult {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DshResult {
+    pub ok: bool,
+    pub url: String,
+    pub workspace: String,
+    pub command: String,
+    pub files_written: Vec<String>,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchAsset {
     pub project_id: String,
     pub project_title: String,

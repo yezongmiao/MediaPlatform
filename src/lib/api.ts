@@ -29,6 +29,7 @@ import type {
   SearchResult,
   Skill,
   TextKernel,
+  DshResult,
   SkillInput,
   VscodeResult,
   WorkspaceInfo,
@@ -245,6 +246,7 @@ export const api = {
   deleteProject: (id: string) => jsonRequest<void>(`/api/projects/${id}`, 'DELETE'),
   rescanProject: (id: string) => jsonRequest<Project>(`/api/projects/${id}/rescan`, 'POST', {}),
   openVscode: (id: string) => jsonRequest<VscodeResult>(`/api/projects/${id}/vscode`, 'POST', {}),
+  openDsh: (id: string) => jsonRequest<DshResult>(`/api/projects/${id}/dsh`, 'POST', {}),
   prepareContext: (id: string) =>
     jsonRequest<{ projectPath: string; filesWritten: string[] }>(
       `/api/projects/${id}/context`,

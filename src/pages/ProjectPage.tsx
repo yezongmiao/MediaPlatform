@@ -46,6 +46,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const [deleting, setDeleting] = useState(false);
   const [cardGroupView, setCardGroupView] = useState<{ assets: Asset[]; kind: 'card' | 'illustration' } | null>(null);
   const [vscodeLoading, setVscodeLoading] = useState(false);
+  const [dshLoading, setDshLoading] = useState(false);
   const [vscodeFallback, setVscodeFallback] = useState<VscodeFallback | null>(null);
   const [uploadKind, setUploadKind] = useState<Kind | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -143,6 +144,20 @@ export function ProjectPage({ projectId }: { projectId: string }) {
       }
     } finally {
       setVscodeLoading(false);
+    }
+  };
+
+  const openDsh = async () => {
+    if (!project) return;
+    setDshLoading(true);
+    try {
+      const result = await api.openDsh(project.id);
+      app.toast({ message: result.message, tone: 'success' });
+    } catch (err) {
+      const apiErr = err instanceof ApiError ? err : null;
+      app.toast({ message: apiErr?.message ?? '打开 DeepSeek Harness 失败', tone: 'error' });
+    } finally {
+      setDshLoading(false);
     }
   };
 
@@ -354,6 +369,9 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             <Button variant="secondary" icon="code" loading={vscodeLoading} onClick={openVscode}>
               在 VSCode 打开
             </Button>
+            <Button variant="secondary" icon="external" loading={dshLoading} onClick={openDsh}>
+              在 DeepSeek Harness 打开
+            </Button>
             <button class="icon-btn icon-btn-soft" title="项目设置" aria-label="项目设置" onClick={() => setSettingsOpen(true)}>
               <Icon name="settings" size={18} />
             </button>
@@ -496,12 +514,12 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               <div class="section-head">
                 <div>
                   <p class="eyebrow">AI WORKSPACE</p>
-                  <h2>带上下文进 VSCode</h2>
+                  <h2>带上下文进外部 AI 工作区</h2>
                 </div>
               </div>
               <p class="panel-text">
                 自动生成 <code>AGENTS.md</code>、<code>CLAUDE.md</code>、技能与预设副本、提示词快照目录和
-                VSCode 配置，外部 AI 打开即可读懂项目。
+                VSCode 配置，外部 AI 打开即可读懂项目。也可以让 DeepSeek Harness 直接把当前项目目录作为工作区启动。
               </p>
               <div class="vscode-file-list">
                 {['AGENTS.md', 'CLAUDE.md', '.vscode/', 'skills/', 'presets/', 'prompts/'].map((item) => (
@@ -511,6 +529,9 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               <div class="panel-actions">
                 <Button variant="secondary" icon="code" loading={vscodeLoading} onClick={openVscode}>
                   打开 VSCode
+                </Button>
+                <Button variant="secondary" icon="external" loading={dshLoading} onClick={openDsh}>
+                  打开 DeepSeek Harness
                 </Button>
                 <Button
                   variant="ghost"

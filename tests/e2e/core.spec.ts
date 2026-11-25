@@ -133,6 +133,7 @@ test('creator workflow: capture → project → create → generate → VSCode �
   expect(snapshots.some((file) => !file.endsWith('README.md'))).toBeTruthy();
 
   // 6. Open in VSCode (fake CLI) and verify generated context on disk
+  await expect(page.getByRole('button', { name: '在 DeepSeek Harness 打开' })).toBeVisible();
   await page.getByRole('button', { name: '在 VSCode 打开' }).click();
   await expect(page.locator('.toast-host')).toContainText('已生成 AI 上下文文件并打开 VS Code');
   for (const rel of [

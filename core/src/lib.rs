@@ -4,6 +4,7 @@ pub mod assistant;
 pub mod card_gen;
 pub mod cli;
 pub mod context;
+pub mod dsh;
 pub mod error;
 pub mod frontmatter;
 pub mod library;
