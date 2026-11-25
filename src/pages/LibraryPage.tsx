@@ -4,12 +4,35 @@ import { useApp } from '../lib/app-context';
 import { Icon } from '../components/Icon';
 import { MarkdownView } from '../components/MarkdownView';
 import { LibraryAssistantPanel } from '../components/LibraryAssistantPanel';
-import { Badge, Button, ConfirmDialog, EmptyState, Field, Modal } from '../components/ui';
-import type { Kind, Preset, Skill } from '../lib/types';
+import { Badge, Button, ConfirmDialog, EmptyState, Field, IconButton, Modal } from '../components/ui';
+import type { Kind, Preset, Skill, SkillCode } from '../lib/types';
 import { KINDS, KIND_MAP } from '../lib/types';
 import { excerpt, kindLabel } from '../lib/format';
 
 type LibraryTab = 'skills' | 'presets';
+type SkillEditorMode = 'write' | 'preview' | 'code';
+
+const CODE_LANGUAGES: [string, string][] = [
+  ['typescript', 'TypeScript'],
+  ['javascript', 'JavaScript'],
+  ['python', 'Python'],
+  ['rust', 'Rust'],
+  ['go', 'Go'],
+  ['bash', 'Shell'],
+  ['json', 'JSON'],
+  ['sql', 'SQL'],
+  ['html', 'HTML'],
+  ['css', 'CSS'],
+  ['text', '纯文本'],
+];
+
+function newCodeFile(index: number): SkillCode {
+  return {
+    name: `snippet-${index + 1}.ts`,
+    language: 'typescript',
+    content: '',
+  };
+}
 
 export function LibraryPage() {
   const app = useApp();
@@ -83,6 +106,7 @@ export function LibraryPage() {
                 <div class="skill-card-head">
                   <span class="skill-mark"><Icon name="bulb" size={17} /></span>
                   <span class="skill-applies">
+                    {skill.code?.length ? <Badge tone="accent">代码 {skill.code.length}</Badge> : null}
                     {skill.appliesTo.length
                       ? skill.appliesTo.map((kind) => <Badge key={kind} tone="neutral">{KIND_MAP[kind]?.label ?? kind}</Badge>)
                       : <Badge tone="neutral">通用</Badge>}
@@ -212,7 +236,8 @@ function SkillEditor({
   const [description, setDescription] = useState('');
   const [appliesTo, setAppliesTo] = useState<string[]>([]);
   const [content, setContent] = useState('');
-  const [preview, setPreview] = useState(false);
+  const [code, setCode] = useState<SkillCode[]>([]);
+  const [mode, setMode] = useState<SkillEditorMode>('write');
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -224,9 +249,18 @@ function SkillEditor({
     setDescription(existing?.description ?? '');
     setAppliesTo(existing?.appliesTo ?? []);
     setContent(existing?.content ?? '');
-    setPreview(false);
+    setCode((existing?.code ?? []).map((file) => ({ ...file })));
+    setMode('write');
     setError('');
   }, [open, existing]);
+
+  const updateCode = (index: number, patch: Partial<SkillCode>) => {
+    setCode((prev) => prev.map((file, i) => (i === index ? { ...file, ...patch } : file)));
+  };
+
+  const removeCode = (index: number) => {
+    setCode((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const toggleKind = (kind: Kind) => {
     setAppliesTo((prev) => (prev.includes(kind) ? prev.filter((x) => x !== kind) : [...prev, kind]));
@@ -240,7 +274,7 @@ function SkillEditor({
     setSaving(true);
     setError('');
     try {
-      const payload = { name: name.trim(), description, appliesTo, content };
+      const payload = { name: name.trim(), description, appliesTo, content, code };
       if (existing) await api.updateSkill(existing.id, payload);
       else await api.createSkill(payload);
       await app.refreshLibrary();
@@ -316,20 +350,95 @@ function SkillEditor({
             </Field>
             <div class="side-tip">
               <Icon name="bulb" size={15} />
-              <p>写清「什么时候用、具体怎么做、不要做什么」，比抽象原则更有用。</p>
+              <p>写清「什么时候用、具体怎么做、不要做什么」，比抽象原则更有用。代码、脚本和配置可作为代码文件附加。</p>
             </div>
           </div>
           <div class="editor-main">
             <div class="editor-main-head">
               <span class="field-label">方法正文（Markdown）</span>
               <div class="asset-tab-switch">
-                <button class={!preview ? 'is-active' : ''} onClick={() => setPreview(false)}>编辑</button>
-                <button class={preview ? 'is-active' : ''} onClick={() => setPreview(true)}>预览</button>
+                <button class={mode === 'write' ? 'is-active' : ''} onClick={() => setMode('write')}>编辑</button>
+                <button class={mode === 'preview' ? 'is-active' : ''} onClick={() => setMode('preview')}>预览</button>
+                <button class={mode === 'code' ? 'is-active' : ''} onClick={() => setMode('code')}>
+                  代码 {code.length ? <span class="skill-code-tab-count">{code.length}</span> : null}
+                </button>
               </div>
             </div>
-            {preview ? (
+            {mode === 'preview' ? (
               <div class="editor-preview-scroll">
                 <MarkdownView source={content} />
+                {code.filter((file) => file.content.trim()).map((file, index) => (
+                  <section class="skill-code-preview" key={`${file.name}-${index}`}>
+                    <div class="skill-code-preview-head">
+                      <strong>{file.name || `snippet-${index + 1}`}</strong>
+                      <span>{file.language || 'text'}</span>
+                    </div>
+                    <pre><code>{file.content}</code></pre>
+                  </section>
+                ))}
+              </div>
+            ) : mode === 'code' ? (
+              <div class="skill-code-editor">
+                <div class="skill-code-toolbar">
+                  <p>代码文件会原样注入提示词，并随技能复制到 VSCode 工程。适合放脚本、类型定义、配置片段。</p>
+                  <Button size="sm" variant="secondary" icon="plus" onClick={() => setCode((prev) => [...prev, newCodeFile(prev.length)])}>
+                    添加代码文件
+                  </Button>
+                </div>
+                {code.length === 0 ? (
+                  <div class="skill-code-empty">
+                    <Icon name="code" size={26} />
+                    <strong>这段技能还没有代码</strong>
+                    <p>可以添加多个文件，每个文件有独立的文件名、语言和完整内容。</p>
+                    <Button variant="primary" icon="plus" onClick={() => setCode([newCodeFile(0)])}>
+                      添加第一个代码文件
+                    </Button>
+                  </div>
+                ) : (
+                  <div class="skill-code-list">
+                    {code.map((file, index) => (
+                      <section class="skill-code-file" key={index}>
+                        <div class="skill-code-head">
+                          <input
+                            class="input skill-code-name"
+                            value={file.name}
+                            placeholder={`snippet-${index + 1}.ts`}
+                            aria-label={`代码文件名 ${index + 1}`}
+                            onInput={(e) => updateCode(index, { name: (e.target as HTMLInputElement).value })}
+                          />
+                          <select
+                            class="select skill-code-language"
+                            value={file.language}
+                            aria-label={`代码语言 ${index + 1}`}
+                            onChange={(e) => updateCode(index, { language: (e.target as HTMLSelectElement).value })}
+                          >
+                            {CODE_LANGUAGES.map(([value, label]) => (
+                              <option value={value} key={value}>{label}</option>
+                            ))}
+                            {!CODE_LANGUAGES.some(([value]) => value === file.language) ? (
+                              <option value={file.language}>{file.language || '自定义'}</option>
+                            ) : null}
+                          </select>
+                          <IconButton
+                            icon="trash"
+                            label={`删除代码文件 ${file.name || index + 1}`}
+                            onClick={() => removeCode(index)}
+                          />
+                        </div>
+                        <textarea
+                          class="textarea skill-code-textarea"
+                          value={file.content}
+                          spellcheck={false}
+                          placeholder="// 把完整代码放在这里"
+                          onInput={(e) => updateCode(index, { content: (e.target as HTMLTextAreaElement).value })}
+                        />
+                      </section>
+                    ))}
+                    <Button size="sm" variant="ghost" icon="plus" onClick={() => setCode((prev) => [...prev, newCodeFile(prev.length)])}>
+                      再加一个代码文件
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <textarea

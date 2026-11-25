@@ -22,6 +22,8 @@ pub enum LibraryAction {
         applies_to: Vec<String>,
         #[serde(default)]
         content: String,
+        #[serde(default)]
+        code: Vec<SkillCode>,
     },
     #[serde(rename = "updateSkill")]
     UpdateSkill {
@@ -33,6 +35,8 @@ pub enum LibraryAction {
         applies_to: Vec<String>,
         #[serde(default)]
         content: String,
+        #[serde(default)]
+        code: Vec<SkillCode>,
     },
     #[serde(rename = "deleteSkill")]
     DeleteSkill { id: String },
@@ -198,13 +202,14 @@ async fn build_context(
     context.push_str("## 技能\n");
     for skill in &skills {
         context.push_str(&format!(
-            "\n### 《{}》\nid: {}\nname: {}\ndescription: {}\nappliesTo: {}\ncontent:\n{}\n",
+            "\n### 《{}》\nid: {}\nname: {}\ndescription: {}\nappliesTo: {}\ncontent:\n{}\ncode:\n{}\n",
             skill.meta.name,
             skill.meta.id,
             skill.meta.name,
             skill.meta.description,
             skill.meta.applies_to.join(", "),
-            skill.content.trim()
+            skill.content.trim(),
+            library::render_code_files(&skill.meta.code)
         ));
     }
     if skills.is_empty() {
@@ -230,11 +235,11 @@ async fn build_context(
     let system = "MEDIADESK_LIBRARY_PROTOCOL\n\
 你是「媒材工坊」的技能与预设管理助手。你只管理技能与预设，不读取、不修改任何项目或项目素材。\n\n\
 只输出一个 JSON 对象，不要 markdown 代码围栏，不要输出 JSON 以外的文字。格式：\n\
-{\"reply\":\"给创作者看的回复\",\"actions\":[{\"type\":\"createSkill\",\"name\":\"技能名\",\"description\":\"一句话描述\",\"appliesTo\":[\"article\"],\"content\":\"完整技能正文\"},{\"type\":\"updateSkill\",\"id\":\"已有技能 id\",\"name\":\"新名称\",\"description\":\"...\",\"appliesTo\":[],\"content\":\"完整正文\"},{\"type\":\"deleteSkill\",\"id\":\"已有技能 id\"},{\"type\":\"createPreset\",\"name\":\"预设名\",\"description\":\"...\",\"kind\":\"article\",\"skillIds\":[],\"content\":\"完整预设正文\"},{\"type\":\"updatePreset\",\"id\":\"已有预设 id\",\"name\":\"...\",\"description\":\"...\",\"kind\":\"article\",\"skillIds\":[],\"content\":\"完整正文\"},{\"type\":\"deletePreset\",\"id\":\"已有预设 id\"}]}\n\n\
+{\"reply\":\"给创作者看的回复\",\"actions\":[{\"type\":\"createSkill\",\"name\":\"技能名\",\"description\":\"一句话描述\",\"appliesTo\":[\"article\"],\"content\":\"完整技能正文\",\"code\":[{\"name\":\"main.ts\",\"language\":\"typescript\",\"content\":\"完整代码\"}]},{\"type\":\"updateSkill\",\"id\":\"已有技能 id\",\"name\":\"新名称\",\"description\":\"...\",\"appliesTo\":[],\"content\":\"完整正文\",\"code\":[]},{\"type\":\"deleteSkill\",\"id\":\"已有技能 id\"},{\"type\":\"createPreset\",\"name\":\"预设名\",\"description\":\"...\",\"kind\":\"article\",\"skillIds\":[],\"content\":\"完整预设正文\"},{\"type\":\"updatePreset\",\"id\":\"已有预设 id\",\"name\":\"...\",\"description\":\"...\",\"kind\":\"article\",\"skillIds\":[],\"content\":\"完整正文\"},{\"type\":\"deletePreset\",\"id\":\"已有预设 id\"}]}\n\n\
 规则：\n\
 1. 服务端会直接执行 actions；不要声称没有执行。你没有项目上下文，不要读取或编造项目素材。\n\
 2. 只能使用当前技能库中真实存在的 id 做 update/delete，禁止编造 id。\n\
-3. updateSkill / updatePreset 必须提供完整替换字段；content 必须是完整正文，不是 diff。\n\
+3. updateSkill / updatePreset 必须提供完整替换字段；content 必须是完整正文，不是 diff；技能的 code 是可选代码文件数组，代码必须原样放入 code 字段的 content，不要改写成文字摘要。\n\
 4. 创建预设的 kind 只能是 article / script / illustration / card / video；skillIds 只能引用当前已有的技能 id。\n\
 5. 只有创作者明确要求时才删除或批量修改；不要擅自清空技能库。\n\
 6. 没有动作时 actions 必须是空数组。\n\
@@ -301,6 +306,7 @@ async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> Li
             description,
             applies_to,
             content,
+            code,
         } => library::create_skill(
             workspace,
             SkillInput {
@@ -308,6 +314,7 @@ async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> Li
                 description: description.clone(),
                 applies_to: applies_to.clone(),
                 content: content.clone(),
+                code: code.clone(),
             },
         )
         .await
@@ -318,6 +325,7 @@ async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> Li
             description,
             applies_to,
             content,
+            code,
         } => library::update_skill(
             workspace,
             id,
@@ -326,6 +334,7 @@ async fn apply_action(workspace: &std::path::Path, action: &LibraryAction) -> Li
                 description: description.clone(),
                 applies_to: applies_to.clone(),
                 content: content.clone(),
+                code: code.clone(),
             },
         )
         .await

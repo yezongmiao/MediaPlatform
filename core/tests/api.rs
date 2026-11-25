@@ -1245,11 +1245,17 @@ async fn library_assistant_streams_and_applies_actions_in_isolated_history() {
     assert!(streamed.contains("测试文卡方法"), "{streamed}");
 
     let (_, skills) = server.call("GET", "/api/skills", None).await;
-    assert!(skills
+    let created_skill = skills
         .as_array()
         .unwrap()
         .iter()
-        .any(|skill| skill["name"] == "测试文卡方法"));
+        .find(|skill| skill["name"] == "测试文卡方法")
+        .expect("assistant-created skill");
+    assert_eq!(created_skill["code"][0]["name"], "card.ts");
+    assert_eq!(
+        created_skill["code"][0]["content"],
+        "export const card = true;"
+    );
     let (_, presets) = server.call("GET", "/api/presets", None).await;
     assert!(presets
         .as_array()
@@ -1716,23 +1722,71 @@ async fn skill_and_preset_crud() {
                 "name": "测试技能ABC",
                 "description": "描述",
                 "appliesTo": ["article", "unknown"],
-                "content": "# 方法\n写具体一点。"
+                "content": "# 方法\n写具体一点。",
+                "code": [{
+                    "name": "main.ts",
+                    "language": "typescript",
+                    "content": "export const answer = 42;\nconsole.log(answer);"
+                }]
             })),
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{skill}");
     let skill_id = skill["id"].as_str().unwrap().to_string();
     assert_eq!(skill["appliesTo"].as_array().unwrap().len(), 1);
+    assert_eq!(skill["code"][0]["name"], "main.ts");
+    assert!(skill["code"][0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("answer = 42"));
 
     let (status, updated) = server
         .call(
             "PUT",
             &format!("/api/skills/{skill_id}"),
-            Some(json!({"name": "测试技能改名", "description": "新描述", "appliesTo": ["script"], "content": "新内容"})),
+            Some(json!({
+                "name": "测试技能改名",
+                "description": "新描述",
+                "appliesTo": ["script"],
+                "content": "新内容",
+                "code": [{
+                    "name": "run.py",
+                    "language": "python",
+                    "content": "print('code skill')"
+                }]
+            })),
         )
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(updated["name"], "测试技能改名");
+    assert_eq!(updated["code"][0]["language"], "python");
+
+    let idea = server
+        .create_idea("代码技能提示词", "验证代码进入生成提示词")
+        .await;
+    let project = server
+        .create_project("代码技能项目", vec![idea["id"].clone()])
+        .await;
+    let (status, prompt) = server
+        .call(
+            "POST",
+            "/api/llm/prompt",
+            Some(json!({
+                "projectId": project["id"],
+                "kind": "script",
+                "presetId": null,
+                "skillIds": [skill_id.clone()],
+                "instruction": "用技能里的代码"
+            })),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{prompt}");
+    let prompt = prompt["prompt"].as_str().unwrap();
+    assert!(prompt.contains("run.py"), "code filename missing: {prompt}");
+    assert!(
+        prompt.contains("print('code skill')"),
+        "code body missing: {prompt}"
+    );
 
     let (status, preset) = server
         .call(

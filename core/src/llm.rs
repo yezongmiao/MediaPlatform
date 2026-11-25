@@ -172,9 +172,10 @@ pub async fn build_prompt(
         system.push_str("\n# 已加载技能\n");
         for skill in &used_skills {
             system.push_str(&format!(
-                "\n## {}\n{}\n",
+                "\n## {}\n{}\n{}",
                 skill.meta.name,
-                truncate_chars(skill.content.trim(), 7000)
+                skill.content.trim(),
+                library::render_code_files(&skill.meta.code)
             ));
         }
     }

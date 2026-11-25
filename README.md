@@ -43,6 +43,10 @@
 |---|
 | ![AI 配图组](docs/screenshots/illustration-group.png) |
 
+| 技能代码文件 |
+|---|
+| ![技能代码文件](docs/screenshots/skill-code.png) |
+
 | 技能与预设助手 |
 |---|
 | ![技能助手](docs/screenshots/library-assistant.png) |
@@ -112,9 +116,9 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `release/媒材工坊_0.10.2_aarch64.dmg` | 拖入 Applications 的安装包 | 3.69 MB |
-| `release/媒材工坊_0.10.2_aarch64.app.zip` | 免安装应用 | 3.24 MB |
-| `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.53 MB |
+| `release/媒材工坊_0.11.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.70 MB |
+| `release/媒材工坊_0.11.0_aarch64.app.zip` | 免安装应用 | 3.26 MB |
+| `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.55 MB |
 
 实测：浏览器服务空载 RSS ≈ 8.7MB，冷启动 0.1–0.6s；原生主进程空载约 35MB、打开工作台约 94MB（系统 WKWebView，进程另计）。完整数据见 [验收记录](docs/ACCEPTANCE.md)。
 
@@ -135,6 +139,7 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 7. **和项目助手对话**：项目页「助手」→ 右侧栏打开，项目素材仍在左侧可浏览、可打开 → 选择建议式/覆盖式 → 发送。助手读取项目简介、关联灵感与全部素材，回复通过 SSE 流式显示；**建议式**只展示修改/新建建议，点「采纳并写入」并确认后才写入；**覆盖式**直接修改已有素材并创建新素材。
 8. **VSCode**：项目页「在 VSCode 打开」。若系统没有 `code` 命令，会明确提示并给出可复制的手动命令，同时上下文文件已经生成。
 9. **沉淀方法**：「技能与预设」里编辑方法论与各类素材的写作规范；项目设置可勾选要随项目复制的技能/预设。该页的「技能助手」可流式盘点、创建、改写和删除技能/预设，拥有独立上下文。
+10. **技能代码**：编辑技能时打开「代码」页签，可以添加多个命名代码文件（文件名 + 语言 + 完整代码）。代码原样注入生成提示词，也会写入 VSCode 工程的技能副本；适合放脚本、类型定义、配置片段和可执行示例。
 
 全局搜索：`⌘K` / `Ctrl+K`。
 
@@ -275,7 +280,7 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 ## 设计原则
 
 - **文件是数据库**：没有 SQLite / 私有格式，LLM 与编辑器都能直接读懂。
-- **小体积、低占用**：Preact 前端约 259KB JS（gzip 约 85KB）；Rust 服务常驻内存只有几十 MB；桌面壳使用系统 WebView（WKWebView / WebView2），安装包不含 Chromium。
+- **小体积、低占用**：Preact 前端约 262KB JS（gzip 约 86KB）；Rust 服务常驻内存只有几十 MB；桌面壳使用系统 WebView（WKWebView / WebView2），安装包不含 Chromium。
 - **无外部运行时**：字体、图标、依赖全部本地；生产浏览器版是内嵌 UI 的单文件二进制。
 - **UI**：暖纸色、墨色、朱砂强调、宋体标题的编辑部质感；支持明暗主题与移动端布局。
 - **安全**：只监听 `127.0.0.1`；文件接口限定在 `projects/` 且拒绝隐藏文件、路径穿越与符号链接逃逸；Markdown 预览经 DOMPurify 清洗。
@@ -290,7 +295,7 @@ npm run e2e            # Playwright：真实 Rust 服务 + mock LLM/媒体 + moc
 cargo clippy -p mediadesk-core -p mediadesk-server --all-targets -- -D warnings
 ```
 
-E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；输入法组合输入不误触 Enter；输入框光标中间编辑、缺失 `compositionend` 后失焦恢复；切换工作区；CLI 文本内核 → 项目助手流式建议 → 「采纳并写入」覆盖素材；空 card 目录批量新建；概览文字直达文章管理、文章单项删除与批量删除；AI 文卡图按文章长度生成 3 张、保存全部并折叠为叠加组，组内叠放缩略图切换；同批配图在插图管理页折叠为配图组，`←` / `→` 键切换；媒体生成并落盘；技能助手独立流式创建/删除技能与预设；服务商折叠、模型列表获取与搜索。
+E2E 覆盖：速记 → 立项 → 手写文章 → 设置并测试模型 → 生成/保存 → VSCode 上下文 → 上传插图 → 灯箱 → 项目设置 → 技能创建 → 全局搜索 → 删除进回收站 → 深色主题持久化；移动端抽屉导航；输入法组合输入不误触 Enter；输入框光标中间编辑、缺失 `compositionend` 后失焦恢复；切换工作区；CLI 文本内核 → 项目助手流式建议 → 「采纳并写入」覆盖素材；空 card 目录批量新建；概览文字直达文章管理、文章单项删除与批量删除；AI 文卡图按文章长度生成 3 张、保存全部并折叠为叠加组，组内叠放缩略图切换；同批配图在插图管理页折叠为配图组，`←` / `→` 键切换；媒体生成并落盘；技能助手独立流式创建/删除技能与预设；技能代码文件保存与回读；服务商折叠、模型列表获取与搜索。
 
 Playwright 默认直接驱动系统 Microsoft Edge，不额外下载 Chromium；CI 无 Edge 时可用 `CHROMIUM_PATH` 指定托管浏览器，或设置 `PW_BROWSER=chromium`。输入框与 IME 的固定回归清单见 [测试方案](docs/TESTING.md)。
 

@@ -331,6 +331,7 @@ pub fn seed_skills() -> Vec<(SkillMeta, &'static str)> {
                     name: s.name.into(),
                     description: s.description.into(),
                     applies_to: s.applies_to.iter().map(|x| x.to_string()).collect(),
+                    code: Vec::new(),
                 },
                 s.content,
             )

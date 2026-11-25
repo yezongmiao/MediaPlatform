@@ -167,6 +167,7 @@ export interface LibraryAction {
   kind?: Kind;
   skillIds?: string[];
   content?: string;
+  code?: SkillCode[];
 }
 
 export interface LibraryActionResult {
@@ -215,12 +216,19 @@ export interface Project extends ProjectMeta {
   coverUrl?: string;
 }
 
+export interface SkillCode {
+  name: string;
+  language: string;
+  content: string;
+}
+
 export interface Skill {
   id: string;
   name: string;
   description: string;
   appliesTo: Kind[];
   content: string;
+  code?: SkillCode[];
 }
 
 export interface Preset {
@@ -416,6 +424,7 @@ export interface SkillInput {
   description: string;
   appliesTo: string[];
   content: string;
+  code: SkillCode[];
 }
 
 export interface PresetInput {

@@ -299,6 +299,17 @@ pub struct UpdateAsset {
 // Skills & presets
 // ---------------------------------------------------------------------------
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillCode {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub content: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkillMeta {
@@ -308,6 +319,8 @@ pub struct SkillMeta {
     pub description: String,
     #[serde(default)]
     pub applies_to: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub code: Vec<SkillCode>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -888,6 +901,8 @@ pub struct SkillInput {
     pub applies_to: Vec<String>,
     #[serde(default)]
     pub content: String,
+    #[serde(default)]
+    pub code: Vec<SkillCode>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

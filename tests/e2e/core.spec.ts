@@ -870,6 +870,36 @@ test('library assistant creates and deletes skills with isolated history', async
   expect(skills.some((skill: { name: string }) => skill.name === 'E2E 文卡方法')).toBeFalsy();
 });
 
+test('skill editor saves and restores code files', async ({ page }) => {
+  const name = `E2E 代码技能 ${Date.now()}`;
+  await page.goto('/library');
+  await page.getByRole('button', { name: '新建技能' }).click();
+  const editor = page.getByRole('dialog');
+  await editor.locator('.form-stack input.input').nth(0).fill(name);
+  await editor.locator('.form-stack input.input').nth(1).fill('带可执行示例的技能');
+  await editor.locator('.asset-tab-switch button').filter({ hasText: '代码' }).click();
+  await editor.getByRole('button', { name: '添加第一个代码文件' }).click();
+  const codeFile = editor.locator('.skill-code-file');
+  await codeFile.locator('.skill-code-name').fill('greet.py');
+  await codeFile.locator('.skill-code-language').selectOption('python');
+  await codeFile
+    .locator('.skill-code-textarea')
+    .fill('def greet(name: str) -> None:\n    print(f\"hello {name}\")');
+  await page.screenshot({ path: path.join(SHOTS, '22-skill-code.png') });
+  await editor.getByRole('button', { name: '保存技能' }).click();
+  await expect(editor).not.toBeVisible();
+
+  const card = page.locator('.skill-card').filter({ hasText: name });
+  await expect(card).toContainText('代码 1');
+  await card.getByRole('button', { name: '编辑' }).click();
+  const reopened = page.getByRole('dialog');
+  await reopened.locator('.asset-tab-switch button').filter({ hasText: '代码' }).click();
+  await expect(reopened.locator('.skill-code-name')).toHaveValue('greet.py');
+  await expect(reopened.locator('.skill-code-textarea')).toHaveValue(
+    'def greet(name: str) -> None:\n    print(f"hello {name}")',
+  );
+});
+
 test('provider catalog: accordion and model list', async ({ page }) => {
   await page.goto('/settings');
   const card = page.locator('.settings-card').filter({ hasText: '大模型接入' });

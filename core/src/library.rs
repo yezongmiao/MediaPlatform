@@ -46,7 +46,7 @@ pub async fn get_skill(workspace: &Path, id: &str) -> ApiResult<Skill> {
     Err(ApiError::not_found("技能不存在"))
 }
 
-fn validate_skill_input(input: &SkillInput) -> ApiResult<(String, Vec<String>)> {
+fn validate_skill_input(input: &SkillInput) -> ApiResult<(String, Vec<String>, Vec<SkillCode>)> {
     let name = validate_title(&input.name)?;
     let applies: Vec<String> = input
         .applies_to
@@ -54,7 +54,74 @@ fn validate_skill_input(input: &SkillInput) -> ApiResult<(String, Vec<String>)> 
         .filter(|k| is_valid_kind(k))
         .cloned()
         .collect();
-    Ok((name, applies))
+    let code = input
+        .code
+        .iter()
+        .enumerate()
+        .filter_map(|(index, file)| {
+            let content = file.content.trim_end().to_string();
+            if content.trim().is_empty() {
+                return None;
+            }
+            let language = if file.language.trim().is_empty() {
+                "text".to_string()
+            } else {
+                file.language.trim().to_string()
+            };
+            let name = if file.name.trim().is_empty() {
+                format!("snippet-{}.{}", index + 1, code_extension(&language))
+            } else {
+                file.name.trim().to_string()
+            };
+            Some(SkillCode {
+                name,
+                language,
+                content,
+            })
+        })
+        .collect();
+    Ok((name, applies, code))
+}
+
+fn code_extension(language: &str) -> &str {
+    match language {
+        "typescript" | "ts" => "ts",
+        "javascript" | "js" => "js",
+        "python" | "py" => "py",
+        "rust" | "rs" => "rs",
+        "bash" | "shell" | "sh" => "sh",
+        "json" => "json",
+        "sql" => "sql",
+        "html" => "html",
+        "css" => "css",
+        "go" => "go",
+        "java" => "java",
+        "cpp" | "c++" => "cpp",
+        _ => "txt",
+    }
+}
+
+/// Render attached code files as fenced Markdown so both prompt compilation and
+/// the VSCode copy keep the code verbatim.
+pub fn render_code_files(code: &[SkillCode]) -> String {
+    let mut out = String::new();
+    for file in code {
+        if file.content.trim().is_empty() {
+            continue;
+        }
+        let language = if file.language.trim().is_empty() {
+            "text"
+        } else {
+            file.language.trim()
+        };
+        out.push_str(&format!(
+            "\n\n### 代码文件：{}\n\n~~~{}\n{}\n~~~\n",
+            file.name.trim(),
+            language,
+            file.content.trim_end()
+        ));
+    }
+    out
 }
 
 fn unique_file(dir: &Path, base_id: &str) -> PathBuf {
@@ -68,7 +135,7 @@ fn unique_file(dir: &Path, base_id: &str) -> PathBuf {
 }
 
 pub async fn create_skill(workspace: &Path, input: SkillInput) -> ApiResult<Skill> {
-    let (name, applies) = validate_skill_input(&input)?;
+    let (name, applies, code) = validate_skill_input(&input)?;
     let dir = workspace.join(".mediadesk/skills");
     fs::create_dir_all(&dir).await?;
     let base = slugify(&format!("skill-{}", input.name));
@@ -79,6 +146,7 @@ pub async fn create_skill(workspace: &Path, input: SkillInput) -> ApiResult<Skil
         name,
         description: input.description.trim().to_string(),
         applies_to: applies,
+        code,
     };
     let raw = frontmatter::render(&meta, &input.content)
         .map_err(|e| ApiError::internal(format!("保存技能失败：{e}")))?;
@@ -105,12 +173,13 @@ async fn find_skill_path(workspace: &Path, id: &str) -> ApiResult<(PathBuf, Skil
 
 pub async fn update_skill(workspace: &Path, id: &str, input: SkillInput) -> ApiResult<Skill> {
     let (path, _) = find_skill_path(workspace, id).await?;
-    let (name, applies) = validate_skill_input(&input)?;
+    let (name, applies, code) = validate_skill_input(&input)?;
     let meta = SkillMeta {
         id: id.to_string(),
         name,
         description: input.description.trim().to_string(),
         applies_to: applies,
+        code,
     };
     let raw = frontmatter::render(&meta, &input.content)
         .map_err(|e| ApiError::internal(format!("保存技能失败：{e}")))?;

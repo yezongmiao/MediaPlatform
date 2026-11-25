@@ -97,7 +97,14 @@ pub async fn prepare(workspace: &Path, project_id: &str) -> ApiResult<PreparedCo
     let mut skill_links = Vec::new();
     for skill in &selected_skills {
         let name = format!("{}.md", slugify(&skill.meta.id));
-        let raw = crate::frontmatter::render(&skill.meta, &skill.content)
+        // The library keeps code as structured files. In the VSCode copy, put
+        // it in the Markdown body so external AI tools see it without having to
+        // understand our YAML metadata.
+        let mut copy_meta = skill.meta.clone();
+        copy_meta.code.clear();
+        let mut body = skill.content.clone();
+        body.push_str(&library::render_code_files(&skill.meta.code));
+        let raw = crate::frontmatter::render(&copy_meta, &body)
             .map_err(|e| ApiError::internal(e.to_string()))?;
         let path = project_dir.join("skills").join(&name);
         atomic_write(&path, raw.as_bytes()).await?;
