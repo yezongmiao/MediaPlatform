@@ -133,7 +133,61 @@ fn resolve(cli: &CliConfig, kernel: Kernel) -> Option<PathBuf> {
         let path = PathBuf::from(configured);
         return path.is_file().then_some(path);
     }
+    // Claude Code is often shadowed by editor/native launchers that require a
+    // profile flag. The npm installation is the stable non-interactive entry.
+    if kernel == Kernel::Claude {
+        #[cfg(target_os = "macos")]
+        for preferred in ["/usr/local/bin/claude", "/opt/homebrew/bin/claude"] {
+            let path = PathBuf::from(preferred);
+            if path.is_file() {
+                return Some(path);
+            }
+        }
+    }
     find_on_path(kernel.binary_names())
+}
+
+fn failure_hint(kernel: Kernel, detail: &str) -> Option<&'static str> {
+    if kernel == Kernel::Claude && detail.contains("--profile") {
+        Some(
+            "当前 claude 可执行文件要求 --profile，可能命中了编辑器/启动器自带的包装程序。请在「设置 → 文本内核」把 CLI 路径指向 /usr/local/bin/claude；若必须用该启动器，请在附加参数中每行一个填写完整参数，例如 `-p`、`--profile`、`<名称>`（附加参数会替换默认参数）。",
+        )
+    } else {
+        None
+    }
+}
+
+fn cli_failure(
+    kernel: Kernel,
+    exit_code: Option<i32>,
+    detail: &str,
+    binary: &Path,
+    args: &[String],
+) -> ApiError {
+    let detail = detail.trim().chars().take(1200).collect::<String>();
+    let detail = if detail.is_empty() {
+        "没有错误输出".to_string()
+    } else {
+        detail
+    };
+    let hint = failure_hint(kernel, &detail);
+    let mut message = format!(
+        "{} 执行失败（退出码 {:?}）：{}",
+        kernel.label(),
+        exit_code,
+        detail
+    );
+    if let Some(hint) = hint {
+        message.push('\n');
+        message.push_str(hint);
+    }
+    ApiError::new(StatusCode::BAD_GATEWAY, "CLI_FAILED", message).with_details(serde_json::json!({
+        "kernel": kernel.id(),
+        "exitCode": exit_code,
+        "binary": binary.to_string_lossy(),
+        "args": args,
+        "hint": hint,
+    }))
 }
 
 pub fn status(config: &Config) -> KernelStatus {
@@ -435,22 +489,7 @@ where
         } else {
             stderr.trim()
         };
-        let detail = detail.chars().take(1200).collect::<String>();
-        return Err(ApiError::new(
-            StatusCode::BAD_GATEWAY,
-            "CLI_FAILED",
-            format!(
-                "{} 执行失败（退出码 {:?}）：{}",
-                kernel.label(),
-                status.code(),
-                if detail.is_empty() {
-                    "没有错误输出"
-                } else {
-                    &detail
-                }
-            ),
-        )
-        .with_details(serde_json::json!({ "kernel": kernel.id(), "exitCode": status.code() })));
+        return Err(cli_failure(kernel, status.code(), detail, &binary, &args));
     }
 
     let was_streamed = !content.trim().is_empty();
@@ -572,23 +611,12 @@ pub async fn run(
         } else {
             stderr.trim()
         };
-        let detail = detail.chars().take(1200).collect::<String>();
-        return Err(ApiError::new(
-            StatusCode::BAD_GATEWAY,
-            "CLI_FAILED",
-            format!(
-                "{} 执行失败（退出码 {:?}）：{}",
-                kernel.label(),
-                output.status.code(),
-                if detail.is_empty() {
-                    "没有错误输出"
-                } else {
-                    &detail
-                }
-            ),
-        )
-        .with_details(
-            serde_json::json!({ "kernel": kernel.id(), "exitCode": output.status.code() }),
+        return Err(cli_failure(
+            kernel,
+            output.status.code(),
+            detail,
+            &binary,
+            &args,
         ));
     }
 
@@ -611,4 +639,34 @@ pub async fn run(
         latency_ms: started.elapsed().as_millis() as u64,
         binary,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_required_error_gets_an_actionable_hint() {
+        let hint = failure_hint(Kernel::Claude, "error: --profile <name> is required")
+            .expect("profile hint");
+        assert!(hint.contains("/usr/local/bin/claude"));
+        assert!(hint.contains("--profile"));
+
+        assert!(failure_hint(Kernel::Claude, "network unavailable").is_none());
+        assert!(failure_hint(Kernel::Codex, "--profile <name> is required").is_none());
+    }
+
+    #[test]
+    fn cli_failure_mentions_binary_and_keeps_a_short_exit_message() {
+        let error = cli_failure(
+            Kernel::Claude,
+            Some(1),
+            "error: --profile <name> is required",
+            Path::new("/usr/local/bin/claude"),
+            &["-p".to_string()],
+        );
+        assert!(error.message.contains("Claude Code 执行失败"));
+        assert!(error.message.contains("/usr/local/bin/claude"));
+        assert_eq!(error.code, "CLI_FAILED");
+    }
 }

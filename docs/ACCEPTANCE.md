@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.11.0
+# 验收记录 · 媒材工坊 MediaDesk v0.11.1
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,8 +13,8 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.11.0_aarch64.dmg` | 3,880,778 bytes / 3.70 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.11.0_aarch64.app.zip` | 3,417,066 bytes / 3.26 MiB | 由 .app 压缩 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.11.1_aarch64.dmg` | 3,881,342 bytes / 3.70 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.11.1_aarch64.app.zip` | 3,417,676 bytes / 3.26 MiB | 由 .app 压缩 |
 | 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,719,904 bytes / 3.55 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
@@ -22,9 +22,9 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 SHA-256：
 
 ```
-e7505684290806774e5338b0d52a9440dba7880b9f3a60a0c3679ef2cd90b3d2  mediadesk-server-macos-arm64
-57ec7e563fa010a98612a526813f183d8dd37cc1890dc81e84f35a7670b67c6f  媒材工坊_0.11.0_aarch64.app.zip
-a0e19a134b0b2973e71bd1f1e1e1b9c9a3e7ead100553ef8270135b31268bd9a  媒材工坊_0.11.0_aarch64.dmg
+a01abd945b2cbcc534fc467309d19fdb86f2495aaf99a366166336788cef7eb4  mediadesk-server-macos-arm64
+08bb9759fafd8696c1de2a88d336559d6f733854fc9661d6b5f684dcdbf0e217  媒材工坊_0.11.1_aarch64.app.zip
+8c7186eb93a5387ac612ff252309cc17fcd5ec079e5a59c5fffe50149f50ee03  媒材工坊_0.11.1_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -39,7 +39,7 @@ a0e19a134b0b2973e71bd1f1e1e1b9c9a3e7ead100553ef8270135b31268bd9a  媒材工坊_0
 |---|---|
 | `npm run typecheck` | 通过（0 error） |
 | `npm test` | 5 个测试文件 / **19 tests passed** |
-| `cargo test --workspace --exclude mediadesk-desktop` | **35 tests passed**（15 unit + 20 integration） |
+| `cargo test --workspace --exclude mediadesk-desktop` | **37 tests passed**（17 unit + 20 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
 | `cargo fmt --all -- --check` | 通过 |
 | `npm run build` | 通过；JS 262.19 kB（gzip 85.84 kB），CSS 130.13 kB（gzip 22.02 kB） |
@@ -120,6 +120,7 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | AI 配图组 | 同批配图折叠为配图组，叠加缩略图 + 大图预览，支持键盘左右切换 | Playwright 3 张配图折叠并 `←` / `→` 切换 |
 | 输入框编辑 | 组合输入失焦/窗口切换时提交并释放守卫；标签失焦用 DOM 当前值提交 | Playwright 缺失 `compositionend` 后失焦保存测试 |
 | 技能代码 | 技能可保存多个命名代码文件；代码进入生成提示词与 VSCode 技能副本 | Rust 技能 CRUD/提示词/项目副本测试 + Playwright 编辑器保存回读 |
+| Claude CLI 路径 | 优先官方 `/usr/local/bin/claude`，避免编辑器包装程序要求 `--profile`；失败时给出路径与参数诊断 | Rust CLI 单元测试 + 本机实际生成/助手/技能助手调用 |
 
 ---
 
@@ -154,7 +155,7 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | macOS `.dmg` | **3.69 MiB** |
 | 原生主进程 RSS（打开工作台） | **94,768 KiB / 92.5 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.11.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.11.1`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---

@@ -2059,7 +2059,7 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "mediadesk-core"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -2084,7 +2084,7 @@ dependencies = [
 
 [[package]]
 name = "mediadesk-desktop"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "mediadesk-core",
  "tauri",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "mediadesk-server"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "axum",
  "mediadesk-core",

@@ -116,8 +116,8 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `release/媒材工坊_0.11.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.70 MB |
-| `release/媒材工坊_0.11.0_aarch64.app.zip` | 免安装应用 | 3.26 MB |
+| `release/媒材工坊_0.11.1_aarch64.dmg` | 拖入 Applications 的安装包 | 3.70 MB |
+| `release/媒材工坊_0.11.1_aarch64.app.zip` | 免安装应用 | 3.26 MB |
 | `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.55 MB |
 
 实测：浏览器服务空载 RSS ≈ 8.7MB，冷启动 0.1–0.6s；原生主进程空载约 35MB、打开工作台约 94MB（系统 WKWebView，进程另计）。完整数据见 [验收记录](docs/ACCEPTANCE.md)。
