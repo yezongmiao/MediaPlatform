@@ -121,8 +121,8 @@ export function TagInput({
   max?: number;
 }) {
   const [draft, setDraft] = useState('');
-  const add = () => {
-    const tag = draft.trim().replace(/^#/, '');
+  const add = (raw = draft) => {
+    const tag = raw.trim().replace(/^#/, '');
     if (!tag || value.includes(tag) || value.length >= max) {
       setDraft('');
       return;
@@ -154,7 +154,7 @@ export function TagInput({
             onChange(value.slice(0, -1));
           }
         }}
-        onBlur={add}
+        onBlur={(e) => add((e.target as HTMLInputElement).value)}
       />
     </div>
   );

@@ -256,7 +256,7 @@ test('mobile layout: drawer navigation and quick capture entry', async ({ page }
   await expect(page.getByText('移动端速记测试：想法应该随时可以写下。').first()).toBeVisible();
 });
 
-test('IME composition is not interrupted by Enter or controlled input resets', async ({ page }) => {
+test('IME composition is not interrupted by Enter or controlled input resets', async ({ page, request }) => {
   await page.goto('/');
   await page.locator('.sidebar .quick-capture-trigger').click();
   const dialog = page.getByRole('dialog');
@@ -290,6 +290,166 @@ test('IME composition is not interrupted by Enter or controlled input resets', a
   await dialog.getByPlaceholder(/此刻在想什么/).fill('输入法组合期间不应打断，也不应误触保存。');
   await dialog.getByRole('button', { name: '收进灵感箱' }).click();
   await expect(page.getByText(title).first()).toBeVisible();
+
+  // A missed compositionend used to leave the global guard stuck forever:
+  // subsequent typing was ignored and Enter shortcuts stopped working. Focus
+  // out should commit the last DOM value and release the guard.
+  await page.locator('.sidebar .quick-capture-trigger').click();
+  const interruptedDialog = page.getByRole('dialog');
+  const interruptedTitle = `中断组合标题 ${Date.now()}`;
+  const interruptedInput = interruptedDialog.getByPlaceholder('给这个想法一个名字');
+  await interruptedInput.evaluate((element, value) => {
+    const input = element as HTMLInputElement;
+    input.focus();
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        isComposing: true,
+        inputType: 'insertCompositionText',
+        data: value,
+      }),
+    );
+  }, interruptedTitle);
+  await interruptedDialog.getByPlaceholder(/此刻在想什么/).click();
+  await page.waitForTimeout(200);
+  await interruptedDialog.getByPlaceholder(/此刻在想什么/).fill('组合结束后的正文，可以正常保存。');
+  await interruptedDialog.getByRole('button', { name: '收进灵感箱' }).click();
+  await expect(page.getByText(interruptedTitle).first()).toBeVisible();
+
+  // The same interrupted-composition path in a project asset editor must
+  // commit the DOM value before Save reads component state.
+  const projectResponse = await request.post('/api/projects', {
+    data: { title: 'IME 项目输入测试', brief: '验证项目编辑器的输入恢复。' },
+  });
+  expect(projectResponse.ok()).toBeTruthy();
+  const inputProject = await projectResponse.json();
+  const articleResponse = await request.post(`/api/projects/${inputProject.id}/assets`, {
+    data: { kind: 'article', title: '输入测试文章', content: '' },
+  });
+  expect(articleResponse.ok()).toBeTruthy();
+  const inputArticle = await articleResponse.json();
+  await page.goto(`/projects/${inputProject.id}`);
+  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await page.locator('.asset-card').filter({ hasText: '输入测试文章' }).click();
+  const assetEditor = page.getByRole('dialog');
+  const assetTitleInput = assetEditor.locator('.asset-side input.input').first();
+  const recoveredTitle = `项目编辑器恢复 ${Date.now()}`;
+  await assetTitleInput.evaluate((element, value) => {
+    const input = element as HTMLInputElement;
+    input.focus();
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, value);
+    input.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        isComposing: true,
+        inputType: 'insertCompositionText',
+        data: value,
+      }),
+    );
+  }, recoveredTitle);
+  await assetEditor.getByRole('button', { name: '编辑', exact: true }).click();
+  await page.waitForTimeout(100);
+  await assetEditor.getByRole('button', { name: '保存', exact: true }).click();
+  await expect(page.locator('.toast-host')).toContainText('素材已保存');
+  const updatedArticle = await (
+    await request.get(`/api/projects/${inputProject.id}/assets/${inputArticle.id}`)
+  ).json();
+  expect(updatedArticle.title).toBe(recoveredTitle);
+});
+
+test('project editor inputs keep the caret and survive a missing compositionend', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E 输入框回归', brief: '验证项目素材编辑器的输入与 IME 异常恢复。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  const asset = await request.post(`/api/projects/${project.id}/assets`, {
+    data: { kind: 'article', title: '输入测试文章', content: '# 初始正文' },
+  });
+  expect(asset.ok()).toBeTruthy();
+  const assetData = await asset.json();
+
+  await page.goto(`/projects/${project.id}`);
+  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await page.locator('.asset-card').filter({ hasText: '输入测试文章' }).click();
+  const editor = page.locator('.asset-editor-modal');
+  const titleInput = editor.locator('.asset-side input.input').first();
+  await titleInput.fill('abcd');
+  await titleInput.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.focus();
+    input.setSelectionRange(2, 2);
+  });
+  await page.keyboard.type('X');
+  await expect(titleInput).toHaveValue('abXcd');
+
+  // Simulate WebKit losing compositionend when focus moves to the body.
+  await titleInput.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.focus();
+    input.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(input, '项目组合标题');
+    input.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        isComposing: true,
+        inputType: 'insertCompositionText',
+        data: '项目组合标题',
+      }),
+    );
+  });
+  await editor.locator('.asset-panel-title').click();
+  await page.waitForTimeout(100);
+  await editor.getByRole('button', { name: '编辑', exact: true }).click();
+  await editor.locator('.asset-textarea').fill('组合结束后的正文，正常保存。');
+  await editor.locator('.modal-footer').getByRole('button', { name: '保存' }).click();
+  await expect(editor).not.toBeVisible();
+
+  const fetched = await (await request.get(`/api/projects/${project.id}/assets/${assetData.id}`)).json();
+  expect(fetched.title).toBe('项目组合标题');
+  expect(fetched.content).toContain('组合结束后的正文');
+});
+
+test('project editor inputs keep the caret while editing', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E 光标编辑', brief: '验证项目输入框光标位置。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  const article = await request.post(`/api/projects/${project.id}/assets`, {
+    data: { kind: 'article', title: '光标测试文章', content: '' },
+  });
+  expect(article.ok()).toBeTruthy();
+
+  await page.goto(`/projects/${project.id}`);
+  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await page.locator('.asset-card').filter({ hasText: '光标测试文章' }).click();
+  const editor = page.getByRole('dialog');
+  await expect(editor.locator('.asset-editor')).toBeVisible();
+  await page.waitForTimeout(80);
+
+  const title = editor.locator('.asset-side input.input').first();
+  await title.fill('abcdef');
+  await title.evaluate((element) => {
+    (element as HTMLInputElement).setSelectionRange(3, 3);
+  });
+  await page.keyboard.type('X');
+  await expect(title).toHaveValue('abcXdef');
+
+  await editor.getByRole('button', { name: '编辑', exact: true }).click();
+  const body = editor.locator('.asset-textarea');
+  await body.fill('第一行内容\n第二行内容');
+  await body.evaluate((element) => {
+    (element as HTMLTextAreaElement).setSelectionRange(4, 4);
+  });
+  await page.keyboard.type('X');
+  await expect(body).toHaveValue('第一行内X容\n第二行内容');
 });
 
 test('switch workspace from settings and restore it', async ({ page, request }) => {

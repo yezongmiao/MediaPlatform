@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.10.0
+# 验收记录 · 媒材工坊 MediaDesk v0.10.1
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,8 +13,8 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.10.0_aarch64.dmg` | 3,868,577 bytes / 3.69 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.10.0_aarch64.app.zip` | 3,403,547 bytes / 3.24 MiB | 由 .app 压缩 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.10.1_aarch64.dmg` | 3,870,851 bytes / 3.69 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.10.1_aarch64.app.zip` | 3,405,106 bytes / 3.24 MiB | 由 .app 压缩 |
 | 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,703,344 bytes / 3.53 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
@@ -22,9 +22,9 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 SHA-256：
 
 ```
-ce7a1aea8b11df8f8f88ebb1880cf8af7cedbab683de77dbddea03143b4a2279  mediadesk-server-macos-arm64
-1921a4d98ccfc466cf78155657531cc113ae0cb2a10761642bf94be726b2e6a9  媒材工坊_0.10.0_aarch64.app.zip
-ab4eca1c0a8e00966210cf875db9f72c42872340237fccde1c9fbc13f4461778  媒材工坊_0.10.0_aarch64.dmg
+73f880e4b77ee02abf47604d9c794c83fe96151bf5b2a19625b00fba74a67830  mediadesk-server-macos-arm64
+2ab718c04946fd3530cb9454a3c8e254ef3cf5e335573a502d768bea4232849a  媒材工坊_0.10.1_aarch64.app.zip
+6115a374df135ecf32c9de6793d3edefc18081a7953bc10d7632559beb051da8  媒材工坊_0.10.1_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -42,17 +42,18 @@ ab4eca1c0a8e00966210cf875db9f72c42872340237fccde1c9fbc13f4461778  媒材工坊_0
 | `cargo test --workspace --exclude mediadesk-desktop` | **35 tests passed**（15 unit + 20 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
 | `cargo fmt --all -- --check` | 通过 |
-| `npm run build` | 通过；JS 258.79 kB（gzip 84.87 kB），CSS 126.87 kB（gzip 21.48 kB） |
+| `npm run build` | 通过；JS 259.36 kB（gzip 85.02 kB），CSS 126.87 kB（gzip 21.48 kB） |
 
 ### 2.2 Playwright 端到端
 
 真实 Microsoft Edge（Chromium 内核）+ 真实 Rust 服务 + mock LLM + mock 媒体接口 + mock CLI + fake VS Code CLI：
 
 ```text
-11 个场景（完整批量运行在本机曾受宿主 page setup 超时影响，以下场景均已单独/分批重跑通过）
+12 个场景（完整批量运行在本机曾受宿主 page setup 超时影响，以下场景均已单独/针对性重跑通过）
 ✓ creator workflow: capture → project → create → generate → VSCode → upload → skills → search
 ✓ mobile layout: drawer navigation and quick capture entry
 ✓ IME composition is not interrupted by Enter or controlled input resets
+✓ project editor inputs keep the caret and survive a missing compositionend
 ✓ switch workspace from settings and restore it
 ✓ CLI text kernel and project assistant edits
 ✓ assistant creates new card assets in an empty directory
@@ -61,7 +62,7 @@ ab4eca1c0a8e00966210cf875db9f72c42872340237fccde1c9fbc13f4461778  媒材工坊_0
 ✓ media generation saves an illustration into the project
 ✓ library assistant creates and deletes skills with isolated history
 ✓ provider catalog: accordion and model list
-11 个场景通过（分别/针对性重跑）
+12 个场景通过（分别/针对性重跑）
 ```
 
 本轮新增覆盖：
@@ -79,6 +80,7 @@ ab4eca1c0a8e00966210cf875db9f72c42872340237fccde1c9fbc13f4461778  媒材工坊_0
 - 项目概览：点击「文章」分类标题直接进入文章管理；素材卡改为紧凑自适应网格；
 - 助手上下文：30 个长文素材全部进入提示词，mock CLI 统计到 >60,000 字符，未触发旧的 24×1,600 上限；
 - AI 配图组：文卡图生成的 3 张配图在插图管理页折叠为 1 组，打开后按 `→` 切到 02/03、按 `←` 回到 01/03；
+- 输入框异常：项目素材编辑器标题支持中间光标插入；模拟 `compositionstart` 后故意不发送 `compositionend`，失焦后标题的 DOM 值仍能提交并正常保存，确认全局输入守卫不会再卡死；
 - 助手 UI 统一：技能与预设助手改为与项目助手相同的 380px 侧栏、固定顶部工具栏、消息流和输入区；窄屏同样变为 420px 抽屉；顶部按钮也会在「助手/收起助手」间切换。
 - 批量删除：单张删除确认后卡片减少；批量选择 2 张后一次移入回收站，项目 `assets.article` 变为 0；
 - 助手入口：切换到「脚本」Tab 后右下角悬浮「助手」仍可见并可打开右侧栏。
@@ -112,6 +114,7 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 助手随时唤起 | 项目任意 Tab 右下角悬浮入口；`⌘⇧A` / `Ctrl+Shift+A` 快捷键 | Playwright 在脚本 Tab 通过悬浮入口打开右侧栏 |
 | 助手上下文放开 | 不再按素材数/正文/历史/消息/action 数截断；Claude CLI 决定实际上限 | Rust 30 长文素材完整提示词测试 >60k 字符 |
 | AI 配图组 | 同批配图折叠为配图组，叠加缩略图 + 大图预览，支持键盘左右切换 | Playwright 3 张配图折叠并 `←` / `→` 切换 |
+| 输入框编辑 | 组合输入失焦/窗口切换时提交并释放守卫；标签失焦用 DOM 当前值提交 | Playwright 缺失 `compositionend` 后失焦保存测试 |
 
 ---
 
@@ -141,12 +144,12 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 浏览器服务二进制 | **3,703,344 bytes / 3.53 MiB** |
 | 浏览器服务 RSS（空载） | **8,688 KiB / 8.5 MiB** |
 | 冷启动到 `/api/health` 可用 | **0.164s**（缓存态） |
-| 前端 JS / CSS（gzip） | **84.87 KiB / 21.48 KiB** |
-| macOS `.app` | **6.29 MiB** |
+| 前端 JS / CSS（gzip） | **85.02 KiB / 21.48 KiB** |
+| macOS `.app` | **6.31 MiB** |
 | macOS `.dmg` | **3.69 MiB** |
 | 原生主进程 RSS（打开工作台） | **94,944 KiB / 92.7 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.10.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.10.1`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---
