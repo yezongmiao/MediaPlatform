@@ -519,7 +519,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               </div>
               <p class="panel-text">
                 自动生成 <code>AGENTS.md</code>、<code>CLAUDE.md</code>、技能与预设副本、提示词快照目录和
-                VSCode 配置，外部 AI 打开即可读懂项目。也可以让 DeepSeek Harness 直接把当前项目目录作为工作区启动。
+                VSCode 配置，外部 AI 打开即可读懂项目。DeepSeek Harness 按钮会刷新这些上下文，并切到已打开的桌面窗口（工作区以该窗口为准）。
               </p>
               <div class="vscode-file-list">
                 {['AGENTS.md', 'CLAUDE.md', '.vscode/', 'skills/', 'presets/', 'prompts/'].map((item) => (

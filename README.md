@@ -14,7 +14,7 @@
 - **文本内核可切换**：文章、脚本、文卡图可走 API，也可调用本机 `claude` / `codex` / `opencode` / `deepseek` CLI；提示词与结果仍可预览、快照。
 - **媒体模型直连**：插图走 OpenAI Images 兼容接口，视频支持 OpenAI / 通用 task / Seedance 任务协议，成功后直接落进项目素材库。
 - **项目助手右侧栏**：流式接收回复，边生成边阅读；不仅能改已有素材，还能在空目录里新建文章、脚本与文卡图文案；建议式给出「采纳并写入」按钮，确认后才写入。助手上下文不再按素材数/正文/历史做服务端截断，上限交给当前模型或 CLI。
-- **VSCode / DeepSeek Harness 协作**：一键生成 `AGENTS.md`、`CLAUDE.md`、技能/预设副本、`.vscode/` 与机器可读上下文；可直接调用 `code` 打开项目，或启动 DeepSeek Harness 并把当前项目目录作为默认工作区。
+- **VSCode / DeepSeek Harness 协作**：一键生成 `AGENTS.md`、`CLAUDE.md`、技能/预设副本、`.vscode/` 与机器可读上下文；可直接调用 `code` 打开项目，或唤起已运行的 DeepSeek Harness 桌面窗口；桌面未运行时回退为以当前项目目录启动 `dsh web` 工作区。
 - **AI 文卡图**：从文章按篇幅生成多张 1080×1440 编辑式 PNG（约每 500 字 1 张，最多 9 张），可选 AI 配图与 6 套纸张主题（含纯白底色）；一次生成的图片在管理中折叠为一组，叠加缩略图采用完整插值缩放而非裁切。
 - **AI 配图组**：文卡图生成时同批配图自动归为一组，插图管理中以叠加缩略图展示；组详情支持键盘 `←` / `→` 切换。
 - **紧凑素材密度**：项目素材卡改为自适应小卡；文卡图页的唯一主按钮即「AI 文卡图」，不再保留独立的手动生成入口。
@@ -116,8 +116,8 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 
 | 文件 | 用途 | 大小 |
 |---|---|---|
-| `release/媒材工坊_0.12.0_aarch64.dmg` | 拖入 Applications 的安装包 | 3.71 MB |
-| `release/媒材工坊_0.12.0_aarch64.app.zip` | 免安装应用 | 3.27 MB |
+| `release/媒材工坊_0.12.1_aarch64.dmg` | 拖入 Applications 的安装包 | 3.72 MB |
+| `release/媒材工坊_0.12.1_aarch64.app.zip` | 免安装应用 | 3.28 MB |
 | `release/mediadesk-server-macos-arm64` | 浏览器版单二进制（内嵌 UI） | 3.58 MB |
 
 实测：浏览器服务空载 RSS ≈ 8.7MB，冷启动 0.1–0.6s；原生主进程空载约 35MB、打开工作台约 94MB（系统 WKWebView，进程另计）。完整数据见 [验收记录](docs/ACCEPTANCE.md)。
@@ -140,7 +140,7 @@ Windows 使用相同 Tauri 配置，在 Windows 上执行 `npx tauri build --bun
 8. **VSCode**：项目页「在 VSCode 打开」。若系统没有 `code` 命令，会明确提示并给出可复制的手动命令，同时上下文文件已经生成。
 9. **沉淀方法**：「技能与预设」里编辑方法论与各类素材的写作规范；项目设置可勾选要随项目复制的技能/预设。该页的「技能助手」可流式盘点、创建、改写和删除技能/预设，拥有独立上下文。
 10. **技能代码**：编辑技能时打开「代码」页签，可以添加多个命名代码文件（文件名 + 语言 + 完整代码）。代码原样注入生成提示词，也会写入 VSCode 工程的技能副本；适合放脚本、类型定义、配置片段和可执行示例。
-11. **DeepSeek Harness 工作区**：项目页点「在 DeepSeek Harness 打开」，会先刷新 AI 上下文文件，再以当前项目目录为 cwd 启动 `dsh web`（随机端口），并自动打开对应工作区。已安装 DeepSeek Harness 时无需额外配置；也可用 `MEDIADESK_DSH_BIN` 指定 `dsh` 路径。
+11. **DeepSeek Harness 工作区**：项目页点「在 DeepSeek Harness 打开」，会先刷新 AI 上下文文件；优先通过 `dsh://open` 唤起已运行的桌面窗口，不再新开 web 进程或浏览器标签。无法唤起桌面时，才以当前项目目录为 cwd 启动 `dsh web`（随机端口）并打开浏览器。也可用 `MEDIADESK_DSH_BIN` 指定 `dsh` 路径。
 
 全局搜索：`⌘K` / `Ctrl+K`。
 

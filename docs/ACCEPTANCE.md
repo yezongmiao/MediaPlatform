@@ -1,4 +1,4 @@
-# 验收记录 · 媒材工坊 MediaDesk v0.12.0
+# 验收记录 · 媒材工坊 MediaDesk v0.12.1
 
 > 验收时间：2026-11-23 · 验收环境：macOS 26.6.2（Apple Silicon arm64，8GB）
 > Node 22.18.0 · Rust 1.97.1 · Xcode 26 · VS Code 1.134.0
@@ -13,8 +13,8 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 
 | 产物 | 路径 | 体积 | 校验 |
 |---|---|---|---|
-| macOS 安装包（DMG） | `release/媒材工坊_0.12.0_aarch64.dmg` | 3,893,821 bytes / 3.71 MiB | `hdiutil verify` VALID |
-| macOS 应用（zip） | `release/媒材工坊_0.12.0_aarch64.app.zip` | 3,428,841 bytes / 3.27 MiB | 由 .app 压缩 |
+| macOS 安装包（DMG） | `release/媒材工坊_0.12.1_aarch64.dmg` | 3,897,174 bytes / 3.72 MiB | `hdiutil verify` VALID |
+| macOS 应用（zip） | `release/媒材工坊_0.12.1_aarch64.app.zip` | 3,432,603 bytes / 3.28 MiB | 由 .app 压缩 |
 | 浏览器版单二进制（macOS arm64） | `release/mediadesk-server-macos-arm64` | 3,753,056 bytes / 3.58 MiB | 独立目录启动 + HTTP 验证 |
 | 浏览器版单二进制（Windows x64） | 由 GitHub Actions 构建 | — | 未在本机执行 |
 | Windows NSIS 安装包 | 由 GitHub Actions 构建 | — | 未在本机执行 |
@@ -22,9 +22,9 @@ OpenRouter 与 OpenCode Go 做了真实网络请求；其余厂商需要用户�
 SHA-256：
 
 ```
-d95b40c62f51aa31cffd80ed5eb6b711292b4be6ff9a5f7908854388354c3053  mediadesk-server-macos-arm64
-9ba5c4b0b804309c7ec22bc0a6826869d1f5707c1b69cd36d352983a35579712  媒材工坊_0.12.0_aarch64.app.zip
-2660e6e2a331d60e8010ecb20f30977ab5be268b08111e7fd537fa1d22a7f6f0  媒材工坊_0.12.0_aarch64.dmg
+44c4f9407bb7f529bd9a02810d85f0137d343b7e47baa6c463678e26aff798d5  mediadesk-server-macos-arm64
+81de7f2608237d5f7a0d9b506fbba45125afb254b4ea64ffbe4f83a1d3681d8d  媒材工坊_0.12.1_aarch64.app.zip
+20c40655a46253fea831913bad52b694e64694cee4040acbb15ff5c0ba2391dc  媒材工坊_0.12.1_aarch64.dmg
 ```
 
 > macOS 构建为 **Apple Silicon（arm64）**。Intel Mac 需在对应机器重新构建；未提供 universal 包。
@@ -42,7 +42,7 @@ d95b40c62f51aa31cffd80ed5eb6b711292b4be6ff9a5f7908854388354c3053  mediadesk-serv
 | `cargo test --workspace --exclude mediadesk-desktop` | **38 tests passed**（18 unit + 20 integration） |
 | `cargo clippy --workspace --all-targets --exclude mediadesk-desktop -- -D warnings` | 通过，0 warning |
 | `cargo fmt --all -- --check` | 通过 |
-| `npm run build` | 通过；JS 262.82 kB（gzip 86.00 kB），CSS 130.13 kB（gzip 22.02 kB） |
+| `npm run build` | 通过；JS 262.86 kB（gzip 86.04 kB），CSS 130.13 kB（gzip 22.02 kB） |
 
 ### 2.2 Playwright 端到端
 
@@ -121,7 +121,7 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 输入框编辑 | 组合输入失焦/窗口切换时提交并释放守卫；标签失焦用 DOM 当前值提交 | Playwright 缺失 `compositionend` 后失焦保存测试 |
 | 技能代码 | 技能可保存多个命名代码文件；代码进入生成提示词与 VSCode 技能副本 | Rust 技能 CRUD/提示词/项目副本测试 + Playwright 编辑器保存回读 |
 | Claude CLI 路径 | 优先官方 `/usr/local/bin/claude`，避免编辑器包装程序要求 `--profile`；失败时给出路径与参数诊断 | Rust CLI 单元测试 + 本机实际生成/助手/技能助手调用 |
-| DeepSeek Harness 工作区 | 项目页一键以项目目录为 cwd 启动 `dsh web`，随机端口并打开工作区 | 本机实际调用返回 200；DSH 页面工作区标题为当前项目名；Playwright 断言入口可见 |
+| DeepSeek Harness 工作区 | 优先唤起已运行的桌面窗口；桌面不可用时以项目目录为 cwd 启动 `dsh web` | 本机实际调用返回 200、`url=""` 且未新增 web 进程；Playwright 断言入口可见 |
 
 ---
 
@@ -151,12 +151,12 @@ Playwright 默认复用系统 Microsoft Edge（`executablePath` 检测）；本�
 | 浏览器服务二进制 | **3,753,056 bytes / 3.58 MiB** |
 | 浏览器服务 RSS（空载） | **8,752 KiB / 8.5 MiB** |
 | 冷启动到 `/api/health` 可用 | **0.135s**（缓存态） |
-| 前端 JS / CSS（gzip） | **86.00 KiB / 22.02 KiB** |
+| 前端 JS / CSS（gzip） | **86.04 KiB / 22.02 KiB** |
 | macOS `.app` | **6.35 MiB** |
 | macOS `.dmg` | **3.69 MiB** |
 | 原生主进程 RSS（打开工作台） | **96,544 KiB / 94.3 MiB**（系统 WKWebView，XPC 进程另计） |
 
-原生窗口启动后 `/api/health` 返回 `version: 0.12.0`，窗口可交互；截图见 `docs/screenshots/native.png`。
+原生窗口启动后 `/api/health` 返回 `version: 0.12.1`，窗口可交互；截图见 `docs/screenshots/native.png`。
 DMG 已通过 `hdiutil verify` 校验。
 
 ---
