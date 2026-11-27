@@ -185,6 +185,8 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -194,13 +196,28 @@ export function Modal({
     if (shell && document.querySelectorAll('.modal-panel').length <= 1) {
       shell.setAttribute('inert', '');
     }
-    const timer = window.setTimeout(() => {
+    const focusTarget = () => {
+      // Do not steal focus after the user has already started editing a field.
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLElement &&
+        panelRef.current?.contains(active) &&
+        active.closest('input, textarea, select, [contenteditable="true"]')
+      ) {
+        return;
+      }
       const target =
+        panelRef.current?.querySelector<HTMLElement>('[data-autofocus]') ??
         panelRef.current?.querySelector<HTMLElement>(
-          '[data-autofocus], input:not([type=hidden]), textarea, select, button',
-        ) ?? panelRef.current;
+          'input:not([type=hidden]), textarea, select',
+        ) ??
+        panelRef.current;
       target?.focus();
-    }, 30);
+    };
+    // Focus synchronously so `inert`/portal timing cannot leave focus on the
+    // close button. The delayed retry covers editors that mount a tick later.
+    focusTarget();
+    const timer = window.setTimeout(focusTarget, 30);
     const handleKey = (event: KeyboardEvent) => {
       if (isImeComposing(event)) return;
       if (event.key === 'Tab') {
@@ -224,7 +241,7 @@ export function Modal({
       const panels = document.querySelectorAll('.modal-panel');
       if (panels[panels.length - 1] !== panelRef.current) return;
       event.stopPropagation();
-      onClose();
+      onCloseRef.current();
     };
     document.addEventListener('keydown', handleKey);
     return () => {
@@ -238,7 +255,7 @@ export function Modal({
         previous?.focus?.();
       }, 0);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

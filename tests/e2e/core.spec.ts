@@ -450,6 +450,36 @@ test('project editor inputs keep the caret while editing', async ({ page, reques
   await expect(body).toHaveValue('第一行内X容\n第二行内容');
 });
 
+test('modal editors keep focus and accept spaces', async ({ page, request }) => {
+  const created = await request.post('/api/projects', {
+    data: { title: 'E2E 弹窗焦点', brief: '验证编辑时焦点不会被关闭按钮抢走。' },
+  });
+  expect(created.ok()).toBeTruthy();
+  const project = await created.json();
+  const article = await request.post(`/api/projects/${project.id}/assets`, {
+    data: { kind: 'article', title: '空格测试文章', content: '' },
+  });
+  expect(article.ok()).toBeTruthy();
+
+  await page.goto(`/projects/${project.id}`);
+  await page.locator('.project-tab').filter({ hasText: '文章' }).click();
+  await page.locator('.asset-card').filter({ hasText: '空格测试文章' }).click();
+  const editor = page.getByRole('dialog');
+  const title = editor.locator('.asset-side input.input').first();
+  await expect(title).toBeFocused();
+  await editor.getByRole('button', { name: '编辑', exact: true }).click();
+
+  const body = editor.locator('.asset-textarea');
+  await body.click();
+  await page.waitForTimeout(80);
+  await page.keyboard.type('abc');
+  await page.waitForTimeout(100);
+  await expect(body).toBeFocused();
+  await page.keyboard.press('Space');
+  await expect(body).toHaveValue(/abc /);
+  await expect(body).toBeFocused();
+});
+
 test('ideas grid keeps equal card heights', async ({ page, request }) => {
   for (let index = 1; index <= 5; index += 1) {
     const created = await request.post('/api/ideas', {
