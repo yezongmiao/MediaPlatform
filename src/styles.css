@@ -7074,7 +7074,7 @@ input[type="range"] {
     padding: 10px 16px 12px;
   }
 
-  .assistant-composer-foot span {
+  .assistant-composer-foot > span {
     display: none;
   }
 
