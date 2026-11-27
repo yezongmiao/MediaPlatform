@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useState } from 'preact/hooks';
 import type { Asset } from '../lib/types';
 import { Button, Modal } from './ui';
 import { Icon } from './Icon';
@@ -28,6 +28,7 @@ export function CardGroupViewer({
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
   const isIllustration = kind === 'illustration';
+
   const label = isIllustration ? '配图' : '文卡图';
 
   useEffect(() => {
@@ -38,7 +39,7 @@ export function CardGroupViewer({
     setSelectedIndex((current) => Math.min(current, Math.max(0, ordered.length - 1)));
   }, [open, assets]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open || ordered.length < 2) return;
     const onKey = (event: KeyboardEvent) => {
       if (isImeComposing(event)) return;

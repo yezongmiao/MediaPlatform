@@ -445,7 +445,8 @@ test('project editor inputs keep the caret while editing', async ({ page, reques
     return { start: textarea.selectionStart, active: document.activeElement === textarea };
   });
   expect(bodyState).toEqual({ start: 4, active: true });
-  await page.keyboard.type('X');
+  await expect(body).toBeFocused();
+  await body.pressSequentially('X');
   await expect(body).toHaveValue('第一行内X容\n第二行内容');
 });
 
