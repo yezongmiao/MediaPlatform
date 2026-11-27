@@ -19,6 +19,8 @@ struct AssistantOutput {
     edits: Vec<AssistantEdit>,
     #[serde(default)]
     new_assets: Vec<AssistantCreate>,
+    #[serde(default)]
+    groups: Vec<AssistantGroup>,
 }
 
 fn history_path(project_dir: &std::path::Path) -> std::path::PathBuf {
@@ -114,7 +116,7 @@ async fn build_context(
         "MEDIADESK_ASSISTANT_PROTOCOL\n\
 你是「媒材工坊」的项目助手。你熟悉当前项目与全部素材，可以讨论内容，也可以提出对素材的完整修改。\n\n\
 只输出一个 JSON 对象，不要 markdown 代码围栏，不要输出 JSON 以外的文字。格式：\n\
-{\"reply\":\"给创作者看的回复\",\"edits\":[{\"assetId\":\"已有素材 id\",\"title\":\"可选的新标题\",\"content\":\"完整替换后的正文\",\"summary\":\"一句话改动摘要\"}],\"newAssets\":[{\"kind\":\"card\",\"title\":\"新素材标题\",\"content\":\"完整正文或卡片文案\",\"summary\":\"一句话说明\"}]}\n\n\
+{\"reply\":\"给创作者看的回复\",\"edits\":[{\"assetId\":\"已有素材 id\",\"title\":\"可选的新标题\",\"content\":\"完整替换后的正文\",\"summary\":\"一句话改动摘要\"}],\"newAssets\":[{\"kind\":\"card\",\"title\":\"新素材标题\",\"content\":\"完整正文或卡片文案\",\"summary\":\"一句话说明\"}],\"groups\":[{\"groupId\":\"可选，整组统一 id\",\"title\":\"组标题\",\"assetIds\":[\"组内素材 id\"]}]}\n\n\
 # 工具权限\n\
 如果当前文本内核是本机 CLI，你拥有完整工具权限：可以直接读取项目外目录（包括 ~/.claude/skills）、访问网络、运行 Shell 和无头浏览器、生成 PNG/JPG 并写入项目。不要声称“权限被拦截”“沙盒之外”“没有浏览器环境”；缺少运行库时先安装或查找可用环境，不要只解释限制。\n\
 生成二进制插图时：把文件写入项目的 illustration/ 目录，并创建同名 .md sidecar；frontmatter 至少包含 id、kind: illustration、title、status、tags、createdAt、updatedAt、file。不要把二进制塞进 JSON；在 reply 中报告文件路径。\n\
@@ -128,7 +130,8 @@ async fn build_context(
 6. 没有修改或新建时，edits 与 newAssets 都必须是空数组。\n\
 7. 不编造事实、来源和数据；信息不足时在 reply 中提问。\n\
 8. 直接、具体、克制，使用简体中文。\n\
-9. 建议式只限制 edits 是否自动写入；当创作者明确要求执行、生成文件、截图或运行脚本时，应直接使用工具完成并如实报告，不要用“接口只能返回文本”拒绝。\n\n",
+9. 建议式只限制 edits 是否自动写入；当创作者明确要求执行、生成文件、截图或运行脚本时，应直接使用工具完成并如实报告，不要用“接口只能返回文本”拒绝。\n\
+10. 同步生成一组插图或文卡图时，先在 sidecar 中写 cardGroupId / cardGroupTitle / cardGroupIndex / cardGroupTotal，再在 groups 中返回同样的 assetIds 与组标题；服务端会把这些字段写入素材，界面即可按组查看。没有分组时 groups 必须为空数组。\n\n",
     );
     if mode == "apply" {
         system.push_str("当前模式：直接覆盖。服务端会把 edits 写入素材。\n");
@@ -163,7 +166,14 @@ fn history_user_placeholder() -> &'static str {
     "__CURRENT_USER_MESSAGE__"
 }
 
-fn parse_output(raw: &str) -> (String, Vec<AssistantEdit>, Vec<AssistantCreate>) {
+fn parse_output(
+    raw: &str,
+) -> (
+    String,
+    Vec<AssistantEdit>,
+    Vec<AssistantCreate>,
+    Vec<AssistantGroup>,
+) {
     let trimmed = raw.trim();
     let candidates = [
         trimmed.to_string(),
@@ -195,10 +205,10 @@ fn parse_output(raw: &str) -> (String, Vec<AssistantEdit>, Vec<AssistantCreate>)
             } else {
                 output.reply.trim().to_string()
             };
-            return (reply, output.edits, output.new_assets);
+            return (reply, output.edits, output.new_assets, output.groups);
         }
     }
-    (trimmed.to_string(), Vec::new(), Vec::new())
+    (trimmed.to_string(), Vec::new(), Vec::new(), Vec::new())
 }
 
 async fn apply_edits(
@@ -238,7 +248,6 @@ struct PreparedChat {
     record: store::ProjectRecord,
     config: Config,
     mode: String,
-    message: String,
     history: Vec<AssistantMessage>,
     system: String,
     user: String,
@@ -259,14 +268,26 @@ async fn prepare_chat(
     }
     let record = require_project(workspace, project_id).await?;
     let config = store::load_config(workspace).await?;
-    let history = load_history(workspace, project_id).await?.messages;
+    let mut history = load_history(workspace, project_id).await?.messages;
     let (system, user_template) = build_context(workspace, project_id, &mode, &history).await?;
     let user = user_template.replace(history_user_placeholder(), message);
+    // Persist the user turn before launching the CLI. If the process times out,
+    // is stopped, or the page navigates away, the prompt still belongs to the
+    // project's conversation instead of vanishing from history.
+    history.push(AssistantMessage {
+        id: store::new_id(),
+        role: "user".to_string(),
+        content: message.to_string(),
+        created_at: now_iso(),
+        edits: Vec::new(),
+        new_assets: Vec::new(),
+        applied: false,
+    });
+    save_history(&record.dir_path, &history).await?;
     Ok(PreparedChat {
         record,
         config,
         mode,
-        message: message.to_string(),
         history,
         system,
         user,
@@ -283,7 +304,7 @@ async fn finalize_chat(
     kernel: String,
 ) -> ApiResult<AssistantChatResponse> {
     let latency_ms = started.elapsed().as_millis() as u64;
-    let (reply, edits, new_assets) = parse_output(raw);
+    let (reply, edits, new_assets, groups) = parse_output(raw);
     let (applied_edits, mut warnings) = if prepared.mode == "apply" {
         apply_edits(workspace, project_id, &edits).await
     } else {
@@ -295,7 +316,10 @@ async fn finalize_chat(
         (Vec::new(), Vec::new())
     };
     warnings.extend(create_warnings);
-    let applied = !applied_edits.is_empty() || !applied_creates.is_empty();
+    let (applied_groups, group_warnings) = apply_groups(workspace, project_id, &groups).await;
+    warnings.extend(group_warnings);
+    let applied =
+        !applied_edits.is_empty() || !applied_creates.is_empty() || !applied_groups.is_empty();
     let stored_creates = if prepared.mode == "apply" {
         applied_creates
     } else {
@@ -303,15 +327,6 @@ async fn finalize_chat(
     };
 
     let mut messages = prepared.history;
-    messages.push(AssistantMessage {
-        id: store::new_id(),
-        role: "user".to_string(),
-        content: prepared.message,
-        created_at: now_iso(),
-        edits: Vec::new(),
-        new_assets: Vec::new(),
-        applied: false,
-    });
     messages.push(AssistantMessage {
         id: store::new_id(),
         role: "assistant".to_string(),
@@ -326,6 +341,7 @@ async fn finalize_chat(
         reply,
         edits,
         new_assets: stored_creates,
+        groups: applied_groups,
         applied,
         kernel,
         model,
@@ -333,6 +349,58 @@ async fn finalize_chat(
         warnings,
         messages,
     })
+}
+
+async fn apply_groups(
+    workspace: &std::path::Path,
+    project_id: &str,
+    groups: &[AssistantGroup],
+) -> (Vec<AssistantGroup>, Vec<String>) {
+    let mut applied = Vec::new();
+    let mut warnings = Vec::new();
+    for group in groups {
+        let title = group.title.trim();
+        if title.is_empty() || group.asset_ids.is_empty() {
+            warnings.push("助手返回了空分组，已跳过。".to_string());
+            continue;
+        }
+        let group_id = group
+            .group_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("group-{}", store::new_id()));
+        let total = group.asset_ids.len();
+        let mut grouped_ids = Vec::new();
+        for (index, asset_id) in group.asset_ids.iter().enumerate() {
+            match assets::set_asset_group(
+                workspace,
+                project_id,
+                asset_id,
+                &group_id,
+                title,
+                index + 1,
+                total,
+            )
+            .await
+            {
+                Ok(()) => grouped_ids.push(asset_id.clone()),
+                Err(err) => warnings.push(format!(
+                    "分组「{title}」中的素材 {asset_id} 设置失败：{}",
+                    err.message
+                )),
+            }
+        }
+        if !grouped_ids.is_empty() {
+            applied.push(AssistantGroup {
+                group_id: Some(group_id),
+                title: title.to_string(),
+                asset_ids: grouped_ids,
+            });
+        }
+    }
+    (applied, warnings)
 }
 
 async fn create_assets(
@@ -422,9 +490,11 @@ pub async fn chat(
         })?;
         let prompt = format!("{}\n\n{}", prepared.system, prepared.user);
         let access_dirs = assistant_access_dirs(workspace);
+        let mut cli_config = prepared.config.cli.clone();
+        cli_config.timeout_secs = cli_config.timeout_secs.max(1800);
         let out = cli::run_with_dirs(
             &prepared.record.dir_path,
-            &prepared.config.cli,
+            &cli_config,
             kernel,
             &prompt,
             &access_dirs,
@@ -519,9 +589,11 @@ async fn chat_stream_inner(
         let prompt = format!("{}\n\n{}", prepared.system, prepared.user);
         let access_dirs = assistant_access_dirs(workspace);
         let delta_tx = tx.clone();
+        let mut cli_config = prepared.config.cli.clone();
+        cli_config.timeout_secs = cli_config.timeout_secs.max(1800);
         let out = cli::run_stream_with_dirs(
             &prepared.record.dir_path,
-            &prepared.config.cli,
+            &cli_config,
             kernel,
             &prompt,
             &access_dirs,
@@ -588,4 +660,21 @@ pub async fn apply_saved_suggestion(
         warnings,
         messages,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_group_actions_from_the_assistant_json() {
+        let raw = r#"{"reply":"已分组","edits":[],"newAssets":[],"groups":[{"groupId":"g1","title":"图组","assetIds":["a","b"]}]}"#;
+        let (reply, edits, creates, groups) = parse_output(raw);
+        assert_eq!(reply, "已分组");
+        assert!(edits.is_empty());
+        assert!(creates.is_empty());
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].group_id.as_deref(), Some("g1"));
+        assert_eq!(groups[0].asset_ids, vec!["a", "b"]);
+    }
 }

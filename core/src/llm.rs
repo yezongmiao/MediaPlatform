@@ -1437,6 +1437,32 @@ pub async fn build_media_prompt(
         Some(id) => Some(store::require_project(workspace, id).await?),
         None => None,
     };
+    let preset = library::preset_for_kind(workspace, &req.kind, req.preset_id.as_deref()).await?;
+    if let Some(preset) = &preset {
+        if preset.meta.kind != req.kind {
+            return Err(ApiError::bad_request("所选预设与素材类型不匹配"));
+        }
+    }
+    let mut skill_ids = if req.skill_ids.is_empty() {
+        preset
+            .as_ref()
+            .map(|p| p.meta.skill_ids.clone())
+            .unwrap_or_default()
+    } else {
+        req.skill_ids.clone()
+    };
+    let mut seen_skills = HashSet::new();
+    skill_ids.retain(|id| seen_skills.insert(id.clone()));
+    let all_skills = library::list_skills(workspace).await?;
+    let used_skills: Vec<Skill> = skill_ids
+        .iter()
+        .filter_map(|id| {
+            all_skills
+                .iter()
+                .find(|skill| &skill.meta.id == id)
+                .cloned()
+        })
+        .collect();
     let mut idea_ids: Vec<String> = project
         .as_ref()
         .map(|p| p.meta.idea_ids.clone())
@@ -1506,6 +1532,25 @@ pub async fn build_media_prompt(
         ),
     }
     visual.push_str(&format!("\n创作要求：{instruction}\n"));
+    if let Some(preset) = &preset {
+        if !preset.content.trim().is_empty() {
+            visual.push_str(&format!(
+                "\n预设规范（{}）：\n{}\n",
+                preset.meta.name,
+                truncate_chars(preset.content.trim(), 2600)
+            ));
+        }
+    }
+    if !used_skills.is_empty() {
+        visual.push_str("\n已加载技能：\n");
+        for skill in &used_skills {
+            visual.push_str(&format!(
+                "- {}：{}\n",
+                skill.meta.name,
+                truncate_chars(skill.content.trim(), 1600)
+            ));
+        }
+    }
 
     let system = "你是视觉导演。根据项目上下文与创作者要求，写清楚可执行的画面描述；不要解释，不要输出代码块。";
     let user = format!(
@@ -1524,7 +1569,16 @@ pub async fn build_media_prompt(
         system: system.to_string(),
         user,
         kind: req.kind.clone(),
-        preset: None,
-        skills: Vec::new(),
+        preset: preset.as_ref().map(|p| UsedPreset {
+            id: p.meta.id.clone(),
+            name: p.meta.name.clone(),
+        }),
+        skills: used_skills
+            .iter()
+            .map(|skill| UsedPreset {
+                id: skill.meta.id.clone(),
+                name: skill.meta.name.clone(),
+            })
+            .collect(),
     })
 }

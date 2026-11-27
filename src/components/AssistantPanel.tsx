@@ -48,6 +48,8 @@ export function AssistantPanel({
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<AssistantMode>('suggest');
   const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
@@ -61,43 +63,112 @@ export function AssistantPanel({
   const [clearOpen, setClearOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const startedAtRef = useRef(Date.now());
+  const abortRef = useRef<AbortController | null>(null);
+  const stoppedRef = useRef(false);
 
-  const loadHistory = useCallback(async () => {
-    setHistoryLoading(true);
-    setError('');
+  const loadHistory = useCallback(async (silent = false) => {
+    if (!silent) setHistoryLoading(true);
     try {
       const history = await api.getAssistantHistory(project.id);
       setMessages(history.messages);
       setKernel(history.kernel);
+      if (!silent) setError('');
+      return history.messages;
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : '无法读取助手历史');
+      if (!silent) {
+        setError(err instanceof ApiError ? err.message : '无法读取助手历史');
+      }
+      return null;
     } finally {
-      setHistoryLoading(false);
+      if (!silent) setHistoryLoading(false);
     }
   }, [project.id]);
 
   useEffect(() => {
-    if (open) loadHistory();
-  }, [open, loadHistory]);
+    if (!open) return;
+    let cancelled = false;
+    const boot = async () => {
+      setHistoryLoading(true);
+      try {
+        const history = await api.getAssistantHistory(project.id);
+        if (cancelled) return;
+        setMessages(history.messages);
+        setKernel(history.kernel);
+        setError('');
+        const status = await api.getAssistantStatus(project.id).catch(() => null);
+        if (cancelled) return;
+        if (status?.running) {
+          startedAtRef.current = Date.now() - (status.elapsedSecs ?? 0) * 1000;
+          setRunning(true);
+          setStreamStatus('任务仍在后台运行，完成后会自动刷新…');
+        } else {
+          setRunning(false);
+          setStreamStatus('');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : '无法读取助手历史');
+        }
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+    boot();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, project.id]);
+
+  // A task may outlive this panel (the user switched pages). Poll the server
+  // registry so the returned panel shows progress and picks up the final turn.
+  useEffect(() => {
+    if (!open || !running || loading) return;
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      const status = await api.getAssistantStatus(project.id).catch(() => null);
+      if (cancelled || !status) return;
+      if (status.running) {
+        if (status.elapsedSecs !== undefined) {
+          startedAtRef.current = Date.now() - status.elapsedSecs * 1000;
+        }
+        return;
+      }
+      setRunning(false);
+      setStreamStatus('');
+      await loadHistory(true);
+      await onChanged();
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, running, loading, project.id, loadHistory, onChanged]);
 
   useLayoutEffect(() => {
     if (!open) return;
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [messages, streamText, streamStatus, loading, open]);
+  }, [messages, streamText, streamStatus, loading, running, open]);
 
+  // Elapsed time is derived from a timestamp, not incremented by a throttled
+  // interval, so a background tab cannot make a 240s task look like 100s.
   useEffect(() => {
-    if (!loading) {
+    if (!loading && !running) {
       setElapsed(0);
       return;
     }
-    const timer = window.setInterval(() => setElapsed((value) => value + 1), 1000);
+    const tick = () => {
+      setElapsed(Math.max(0, Math.floor((Date.now() - startedAtRef.current) / 1000)));
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
     return () => window.clearInterval(timer);
-  }, [loading]);
+  }, [loading, running]);
 
   const send = async () => {
     const message = input.trim();
-    if (!message || loading || historyLoading) return;
+    if (!message || loading || running || historyLoading) return;
     const pendingId = `pending-${Date.now()}`;
     const pendingMessage: AssistantMessage = {
       id: pendingId,
@@ -105,9 +176,14 @@ export function AssistantPanel({
       content: message,
       createdAt: new Date().toISOString(),
     };
+    const controller = new AbortController();
+    abortRef.current = controller;
+    stoppedRef.current = false;
+    startedAtRef.current = Date.now();
     setMessages((current) => [...current, pendingMessage]);
     setInput('');
     setLoading(true);
+    setRunning(true);
     setElapsed(0);
     setStreamText('');
     setStreamStatus('正在读取项目与素材…');
@@ -126,6 +202,7 @@ export function AssistantPanel({
             setStreamStatus('正在接收…');
           }
         },
+        controller.signal,
       );
       setMessages(response.messages);
       setKernel(response.kernel);
@@ -140,16 +217,46 @@ export function AssistantPanel({
         app.toast({ message: '助手已更新项目素材', tone: 'success' });
       }
     } catch (err) {
-      setMessages((current) => current.filter((item) => item.id !== pendingId));
-      setInput(message);
-      const apiErr = err instanceof ApiError ? err : null;
-      setError(apiErr?.message ?? '助手回复失败');
-      setErrorCode(apiErr?.code ?? '');
+      if (!stoppedRef.current && !controller.signal.aborted) {
+        // The backend saves the user turn before launching the CLI, so prefer
+        // the canonical history over removing the optimistic message.
+        const latest = await loadHistory(true);
+        if (!latest?.some((item) => item.role === 'user' && item.content === message)) {
+          setMessages((current) => current.filter((item) => item.id !== pendingId));
+          setInput(message);
+        }
+        const apiErr = err instanceof ApiError ? err : null;
+        setError(apiErr?.message ?? '助手回复失败');
+        setErrorCode(apiErr?.code ?? '');
+      }
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setLoading(false);
+      setRunning(false);
       setStreamText('');
       setStreamStatus('');
     }
+  };
+
+  const stop = async () => {
+    if (!loading && !running) return;
+    setStopping(true);
+    stoppedRef.current = true;
+    try {
+      await api.stopAssistant(project.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '停止助手失败');
+    }
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    setRunning(false);
+    setStopping(false);
+    setStreamText('');
+    setStreamStatus('已停止');
+    await loadHistory(true);
+    await onChanged();
+    app.toast({ message: '助手任务已停止', tone: 'success' });
   };
 
   const applySuggested = async () => {
@@ -252,7 +359,7 @@ export function AssistantPanel({
                 size="sm"
                 variant="ghost"
                 icon="trash"
-                disabled={!messages.length}
+                disabled={!messages.length || loading || running}
                 onClick={() => setClearOpen(true)}
               >
                 清空
@@ -445,16 +552,34 @@ export function AssistantPanel({
               }}
             />
             <div class="assistant-composer-foot">
-              <span>Enter 发送 · Shift + Enter 换行 · {mode === 'apply' ? '覆盖模式会直接写文件' : '建议模式需点「采纳并写入」'}</span>
-              <Button
-                variant="primary"
-                icon="arrow-right"
-                loading={loading}
-                disabled={!input.trim() || historyLoading || loading}
-                onClick={send}
-              >
-                发送
-              </Button>
+              <span>
+                {running
+                  ? `任务运行中 · ${elapsed}s · 可随时停止`
+                  : `Enter 发送 · Shift + Enter 换行 · ${mode === 'apply' ? '覆盖模式会直接写文件' : '建议模式需点「采纳并写入」'}`}
+              </span>
+              <div class="assistant-composer-actions">
+                {loading || running ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    icon="stop"
+                    loading={stopping}
+                    disabled={stopping}
+                    onClick={stop}
+                  >
+                    停止
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    icon="arrow-right"
+                    disabled={!input.trim() || historyLoading}
+                    onClick={send}
+                  >
+                    发送
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </div>

@@ -47,6 +47,7 @@ export function GenerateDialog({
   const [compiling, setCompiling] = useState(false);
 
   const isMedia = kind === 'illustration' || kind === 'video';
+  const supportsControls = kind !== 'video';
   const kindPresets = useMemo(
     () => app.data.presets.filter((preset) => preset.kind === kind),
     [app.data.presets, kind],
@@ -102,8 +103,8 @@ export function GenerateDialog({
   const payload = () => ({
     projectId: project.id,
     kind,
-    presetId: isMedia ? null : presetId || null,
-    skillIds: isMedia ? [] : skillIds,
+    presetId: supportsControls ? presetId || null : null,
+    skillIds: supportsControls ? skillIds : [],
     instruction,
   });
 
@@ -298,7 +299,7 @@ export function GenerateDialog({
             ))}
           </div>
 
-          {!isMedia ? (
+          {supportsControls ? (
             <Field label="创作预设" hint="决定结构、语气与输出规范">
               <select
                 class="select"
@@ -342,15 +343,15 @@ export function GenerateDialog({
           <button class={`advanced-toggle ${advanced ? 'is-open' : ''}`} onClick={() => setAdvanced(!advanced)}>
             <span>
               <Icon name="sliders" size={15} />
-              {isMedia ? '视觉提示词' : '技能与提示词'}
-              {!isMedia ? <span class="advanced-count">{skillIds.length}</span> : null}
+              {supportsControls ? '技能与提示词' : '视觉提示词'}
+              {supportsControls ? <span class="advanced-count">{skillIds.length}</span> : null}
             </span>
             <Icon name="chevron-down" size={15} />
           </button>
 
           {advanced ? (
             <div class="generate-advanced">
-              {!isMedia ? (
+              {supportsControls ? (
                 <div class="advanced-block">
                   <div class="advanced-head">
                     <strong>已加载技能</strong>
@@ -398,7 +399,7 @@ export function GenerateDialog({
                 ) : (
                   <p class="muted-text">
                     {isMedia
-                      ? '查看实际发给媒体模型的视觉提示词；不调用接口。'
+                      ? '查看实际发给媒体模型的视觉提示词（含已加载预设与技能）；不调用接口。'
                       : '编译后可复制到任意模型使用，不消耗 API。'}
                   </p>
                 )}

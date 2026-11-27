@@ -3,6 +3,7 @@ import type {
   AssistantApplyResponse,
   AssistantChatResponse,
   AssistantHistory,
+  AssistantStatus,
   AssistantStreamEvent,
   BrowseInfo,
   CardPlanResponse,
@@ -224,7 +225,7 @@ export const api = {
     jsonRequest<PromptResult>('/api/llm/prompt', 'POST', payload),
   generateCardPlan: (
     projectId: string,
-    payload: { sourceAssetId?: string; instruction: string; withImage: boolean },
+    payload: { sourceAssetId?: string; instruction: string; withImage: boolean; presetId?: string; skillIds?: string[] },
   ) =>
     jsonRequest<CardPlanResponse>(`/api/projects/${projectId}/card/plan`, 'POST', payload),
   generate: (payload: GenerateRequest) =>
@@ -306,10 +307,19 @@ export const api = {
     request<AssistantHistory>(`/api/projects/${projectId}/chat`),
   chatAssistant: (projectId: string, payload: { message: string; mode: 'suggest' | 'apply' }) =>
     jsonRequest<AssistantChatResponse>(`/api/projects/${projectId}/chat`, 'POST', payload),
+  getAssistantStatus: (projectId: string) =>
+    request<AssistantStatus>(`/api/projects/${projectId}/chat/status`),
+  stopAssistant: (projectId: string) =>
+    jsonRequest<{ ok: boolean; message?: string }>(
+      `/api/projects/${projectId}/chat/stop`,
+      'POST',
+      {},
+    ),
   streamAssistant: async (
     projectId: string,
     payload: { message: string; mode: 'suggest' | 'apply' },
     onEvent: (event: AssistantStreamEvent) => void,
+    signal?: AbortSignal,
   ): Promise<AssistantChatResponse> => {
     let response: Response;
     try {
@@ -317,6 +327,7 @@ export const api = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal,
       });
     } catch (err) {
       throw new ApiError(

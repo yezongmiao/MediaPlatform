@@ -138,60 +138,10 @@ fn start_error(
     }))
 }
 
-/// Deep link the DeepSeek Harness desktop shell registers for "bring the app
-/// window forward". The desktop main process handles exactly this address
-/// (`dsh://open`) and ignores any other `dsh://` path.
-const DESKTOP_DEEPLINK: &str = "dsh://open";
-
-/// Ask the desktop shell to focus its existing window. Returns false when the
-/// `dsh` scheme has no handler (app not installed), so the caller can fall back
-/// to spawning a browser UI.
-fn focus_desktop_app() -> bool {
-    #[cfg(target_os = "macos")]
-    let mut command = {
-        let mut command = std::process::Command::new("open");
-        command.arg(DESKTOP_DEEPLINK);
-        command
-    };
-    #[cfg(target_os = "windows")]
-    let mut command = {
-        let mut command = std::process::Command::new("cmd");
-        command.args(["/C", "start", "", DESKTOP_DEEPLINK]);
-        command
-    };
-    #[cfg(all(unix, not(target_os = "macos")))]
-    let mut command = {
-        let mut command = std::process::Command::new("xdg-open");
-        command.arg(DESKTOP_DEEPLINK);
-        command
-    };
-
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
-}
-
 pub async fn launch(workspace: &Path, project_id: &str) -> ApiResult<DshResult> {
     let prepared = context::prepare(workspace, project_id).await?;
     let project_path = prepared.project_path.clone();
     let manual = format!("cd {} && dsh web", quote_path(&project_path));
-
-    // 默认走桌面 GUI：同一套底图、同一份会话，不新起 web 进程也不开浏览器标签。
-    if focus_desktop_app() {
-        return Ok(DshResult {
-            ok: true,
-            url: String::new(),
-            workspace: project_path.to_string_lossy().to_string(),
-            command: manual,
-            files_written: prepared.files,
-            message: "已切换到 DeepSeek Harness 桌面窗口，上下文文件已刷新；工作区以该窗口为准。"
-                .into(),
-        });
-    }
 
     let bin = find_dsh_bin().ok_or_else(|| {
         ApiError::new(
@@ -300,9 +250,9 @@ pub async fn launch(workspace: &Path, project_id: &str) -> ApiResult<DshResult> 
         command: manual,
         files_written: prepared.files,
         message: if opened {
-            "已生成 AI 上下文，并在 DeepSeek Harness 中打开当前项目目录".into()
+            "已生成 AI 上下文，并直接打开当前项目目录对应的 DeepSeek Harness 工作区".into()
         } else {
-            format!("DeepSeek Harness 已启动，但浏览器未自动打开。请访问：{url}")
+            format!("DeepSeek Harness 工作区已启动，但浏览器未自动打开。请访问：{url}")
         },
     })
 }

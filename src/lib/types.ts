@@ -483,10 +483,22 @@ export interface AssistantHistory {
   kernel: TextKernel;
 }
 
+export interface AssistantStatus {
+  running: boolean;
+  elapsedSecs?: number;
+}
+
+export interface AssistantGroup {
+  groupId?: string;
+  title: string;
+  assetIds: string[];
+}
+
 export interface AssistantChatResponse {
   reply: string;
   edits: AssistantEdit[];
   newAssets?: AssistantCreate[];
+  groups?: AssistantGroup[];
   applied: boolean;
   kernel: string;
   model: string;

@@ -43,7 +43,8 @@ export function AiCardStudio({
   const [sourceId, setSourceId] = useState('');
   const [instruction, setInstruction] = useState('');
   const [withImage, setWithImage] = useState(true);
-  const [themeId, setThemeId] = useState(CARD_THEMES[0].id);
+  const [presetId, setPresetId] = useState('');
+  const [skillIds, setSkillIds] = useState<string[]>([]);
   const [cards, setCards] = useState<GeneratedCard[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [activeImage, setActiveImage] = useState<HTMLImageElement | null>(null);
@@ -60,7 +61,11 @@ export function AiCardStudio({
   const [saveProgress, setSaveProgress] = useState('');
   const [error, setError] = useState('');
 
-  const theme = CARD_THEMES.find((item) => item.id === themeId) ?? CARD_THEMES[0];
+  const theme = CARD_THEMES[0];
+  const kindPresets = app.data.presets.filter((preset) => preset.kind === 'card');
+  const availableSkills = app.data.skills.filter(
+    (skill) => skill.appliesTo.length === 0 || skill.appliesTo.includes('card'),
+  );
   const activeCard = cards[activeIndex] ?? null;
   const activePlan = activeCard?.plan ?? null;
 
@@ -72,8 +77,11 @@ export function AiCardStudio({
     }));
     setSources(list);
     setSourceId((current) => (current && list.some((item) => item.id === current) ? current : list[0]?.id ?? ''));
+    const preset = app.data.presets.find((item) => item.kind === 'card');
+    setPresetId(preset?.id ?? '');
+    setSkillIds(preset?.skillIds ?? []);
     setError('');
-  }, [open, project.assets.article, project.assets.script]);
+  }, [open, project.assets.article, project.assets.script, app.data.presets]);
 
   useEffect(() => {
     if (!activeCard?.imageUrl) {
@@ -126,6 +134,8 @@ export function AiCardStudio({
         sourceAssetId: sourceId || undefined,
         instruction,
         withImage,
+        presetId: presetId || undefined,
+        skillIds,
       });
       setCards(result.cards);
       setActiveIndex(0);
@@ -288,13 +298,55 @@ export function AiCardStudio({
         </div>
 
         <aside class="ai-card-controls">
-          <Field label="取材文章" hint={sources.length ? '文章越长，生成的卡片越多（每约 500 字 1 张，最多 9 张）' : '项目还没有文章，将使用项目简介'}>
+          <Field label="取材文章" hint={sources.length ? '文章越长，生成的卡片越多（每约 500 字 1 张，不设默认上限）' : '项目还没有文章，将使用项目简介'}>
             <select class="select" value={sourceId} onChange={(e) => setSourceId((e.target as HTMLSelectElement).value)}>
               <option value="">不指定（使用项目简介）</option>
               {sources.map((source) => (
                 <option value={source.id} key={source.id}>{source.title}</option>
               ))}
             </select>
+          </Field>
+          <Field label="创作预设" hint="决定结构、语气与输出规范">
+            <select
+              class="select"
+              value={presetId}
+              onChange={(e) => {
+                const id = (e.target as HTMLSelectElement).value;
+                setPresetId(id);
+                const preset = app.data.presets.find((item) => item.id === id);
+                setSkillIds(preset?.skillIds ?? []);
+              }}
+            >
+              <option value="">不套用预设（使用通用规范）</option>
+              {kindPresets.map((preset) => (
+                <option value={preset.id} key={preset.id}>{preset.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="已加载技能" hint={`${availableSkills.length} 个适用于文卡图`}>
+            {availableSkills.length ? (
+              <div class="skill-checks ai-card-skill-checks">
+                {availableSkills.map((skill) => (
+                  <label class={`skill-check ${skillIds.includes(skill.id) ? 'is-checked' : ''}`} key={skill.id}>
+                    <input
+                      type="checkbox"
+                      checked={skillIds.includes(skill.id)}
+                      onChange={() => setSkillIds((prev) => (
+                        prev.includes(skill.id)
+                          ? prev.filter((id) => id !== skill.id)
+                          : [...prev, skill.id]
+                      ))}
+                    />
+                    <span>
+                      <strong>{skill.name}</strong>
+                      <small>{skill.description}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p class="muted-text">还没有适用于文卡图的技能。</p>
+            )}
           </Field>
           <Field label="额外要求" hint="可选：角度、时间线、画面风格">
             <textarea
@@ -316,25 +368,6 @@ export function AiCardStudio({
               <small>会为每张卡片逐张调用图像模型；未配置或失败时自动退回纯文字版。</small>
             </span>
           </label>
-
-          <div class="ai-card-themes">
-            <span class="field-label">纸张主题</span>
-            <div class="theme-swatch-row">
-              {CARD_THEMES.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  class={`theme-swatch ${item.id === theme.id ? 'is-active' : ''}`}
-                  title={item.name}
-                  aria-label={`主题：${item.name}`}
-                  onClick={() => setThemeId(item.id)}
-                  style={{ background: `linear-gradient(135deg, ${item.colors[0]}, ${item.colors[1]})` }}
-                >
-                  <span style={{ color: item.accent }}>媒</span>
-                </button>
-              ))}
-            </div>
-          </div>
 
           <Button variant="primary" icon="spark" loading={loading} onClick={generate}>
             {cards.length ? '重新生成' : '生成文卡图'}

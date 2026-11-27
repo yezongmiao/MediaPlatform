@@ -825,6 +825,10 @@ pub struct CardPlanRequest {
     pub instruction: String,
     #[serde(default)]
     pub with_image: bool,
+    #[serde(default)]
+    pub preset_id: Option<String>,
+    #[serde(default)]
+    pub skill_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -967,6 +971,16 @@ pub struct AssistantCreate {
     pub summary: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantGroup {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_id: Option<String>,
+    pub title: String,
+    #[serde(default)]
+    pub asset_ids: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssistantMessage {
@@ -1003,6 +1017,8 @@ pub struct AssistantChatResponse {
     pub reply: String,
     pub edits: Vec<AssistantEdit>,
     pub new_assets: Vec<AssistantCreate>,
+    #[serde(default)]
+    pub groups: Vec<AssistantGroup>,
     pub applied: bool,
     pub kernel: String,
     pub model: String,
@@ -1023,6 +1039,14 @@ pub struct AssistantApplyResponse {
     pub applied: bool,
     pub warnings: Vec<String>,
     pub messages: Vec<AssistantMessage>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssistantStatus {
+    pub running: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub elapsed_secs: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]

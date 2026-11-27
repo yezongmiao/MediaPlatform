@@ -1,7 +1,8 @@
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::{
     body::Body,
@@ -18,6 +19,7 @@ use http_body_util::BodyExt;
 use serde::Deserialize;
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
+use tokio::task::AbortHandle;
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
@@ -36,11 +38,18 @@ use crate::providers;
 use crate::store;
 use crate::ui;
 
+pub struct AssistantRun {
+    run_id: String,
+    started_at: Instant,
+    abort: Option<AbortHandle>,
+}
+
 pub struct AppState {
     workspace: RwLock<PathBuf>,
     pub state_dir: PathBuf,
     pub code_bin: Option<String>,
     pub client: reqwest::Client,
+    pub assistant_runs: tokio::sync::Mutex<HashMap<String, AssistantRun>>,
 }
 
 impl AppState {
@@ -77,6 +86,7 @@ impl AppState {
             state_dir,
             code_bin,
             client,
+            assistant_runs: tokio::sync::Mutex::new(HashMap::new()),
         }))
     }
 
@@ -162,6 +172,8 @@ pub fn router(state: Arc<AppState>) -> Router {
                 .delete(clear_assistant_history),
         )
         .route("/api/projects/{id}/chat/stream", post(stream_assistant))
+        .route("/api/projects/{id}/chat/status", get(assistant_status))
+        .route("/api/projects/{id}/chat/stop", post(stop_assistant))
         .route(
             "/api/projects/{id}/chat/apply",
             post(apply_assistant_suggestion),
@@ -822,17 +834,103 @@ async fn chat_with_assistant(
     ))
 }
 
+async fn assistant_status(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<AssistantStatus> {
+    let runs = state.assistant_runs.lock().await;
+    if let Some(run) = runs.get(&id) {
+        return Json(AssistantStatus {
+            running: true,
+            elapsed_secs: Some(run.started_at.elapsed().as_secs()),
+        });
+    }
+    Json(AssistantStatus {
+        running: false,
+        elapsed_secs: None,
+    })
+}
+
+async fn stop_assistant(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<SimpleOk> {
+    let run = state.assistant_runs.lock().await.remove(&id);
+    if let Some(run) = run {
+        if let Some(abort) = run.abort {
+            abort.abort();
+        }
+    }
+    Json(SimpleOk {
+        ok: true,
+        message: Some("助手任务已停止".to_string()),
+    })
+}
+
 async fn stream_assistant(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
     Json(req): Json<AssistantChatRequest>,
-) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
+) -> ApiResult<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>> {
+    {
+        let runs = state.assistant_runs.lock().await;
+        if runs.contains_key(&id) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "ASSISTANT_BUSY",
+                "该项目的助手任务仍在运行，请先停止或等待完成。",
+            ));
+        }
+    }
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<AssistantStreamEvent>();
-    let workspace = state.workspace();
-    let client = state.client.clone();
-    tokio::spawn(async move {
-        assistant::chat_stream(&workspace, &client, &id, req, tx).await;
+    let run_id = store::new_id();
+    {
+        let mut runs = state.assistant_runs.lock().await;
+        if runs.contains_key(&id) {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "ASSISTANT_BUSY",
+                "该项目的助手任务仍在运行，请先停止或等待完成。",
+            ));
+        }
+        runs.insert(
+            id.clone(),
+            AssistantRun {
+                run_id: run_id.clone(),
+                started_at: Instant::now(),
+                abort: None,
+            },
+        );
+    }
+    let task_state = state.clone();
+    let task_project = id.clone();
+    let task_run_id = run_id.clone();
+    let handle = tokio::spawn(async move {
+        assistant::chat_stream(
+            &task_state.workspace(),
+            &task_state.client,
+            &task_project,
+            req,
+            tx,
+        )
+        .await;
+        let mut runs = task_state.assistant_runs.lock().await;
+        if runs
+            .get(&task_project)
+            .map(|run| run.run_id == task_run_id)
+            .unwrap_or(false)
+        {
+            runs.remove(&task_project);
+        }
     });
+    {
+        let mut runs = state.assistant_runs.lock().await;
+        if let Some(run) = runs.get_mut(&id) {
+            if run.run_id == run_id {
+                run.abort = Some(handle.abort_handle());
+            }
+        }
+    }
     let stream = futures_util::stream::unfold(rx, |mut rx| async move {
         rx.recv().await.map(|event| {
             let data = serde_json::to_string(&event).unwrap_or_else(|_| {
@@ -842,7 +940,7 @@ async fn stream_assistant(
             (Ok::<_, Infallible>(Event::default().data(data)), rx)
         })
     });
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 async fn apply_assistant_suggestion(

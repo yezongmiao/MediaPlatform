@@ -38,6 +38,7 @@ export type IconName =
   | 'eye'
   | 'eye-off'
   | 'play'
+  | 'stop'
   | 'book'
   | 'sliders'
   | 'chevron-down'
@@ -245,6 +246,7 @@ const PATHS: Record<IconName, JSX.Element> = {
     </>
   ),
   play: <path d="M8 5l11 7-11 7V5z" />,
+  stop: <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" />,
   book: (
     <>
       <path d="M4 5a2 2 0 012-2h13v18H6a2 2 0 01-2-2V5z" />

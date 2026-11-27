@@ -3,18 +3,18 @@ use std::time::Instant;
 use crate::assets;
 use crate::cli::{self, Kernel};
 use crate::error::{ApiError, ApiResult};
+use crate::library;
 use crate::llm;
 use crate::media_gen;
 use crate::models::*;
 use crate::store::{self, require_project};
 
-const MAX_SOURCE_CHARS: usize = 16_000;
+const MAX_SOURCE_CHARS: usize = 48_000;
 const MAX_BODY_ITEMS: usize = 4;
-const MAX_CARDS: usize = 9;
 const CHARS_PER_CARD: usize = 500;
 
 fn desired_count(chars: usize) -> usize {
-    chars.div_ceil(CHARS_PER_CARD).clamp(1, MAX_CARDS)
+    chars.div_ceil(CHARS_PER_CARD).max(1)
 }
 
 fn build_prompt(
@@ -23,6 +23,7 @@ fn build_prompt(
     source: &str,
     instruction: &str,
     count: usize,
+    controls: &str,
 ) -> (String, String) {
     let system = "MEDIADESK_CARD_PROTOCOL\n\
 你是中文视觉编辑，负责把文章做成一组 1080×1440 的编辑式文卡图。只输出一个 JSON 对象，不要 markdown 围栏，不要 JSON 以外文字。\n\
@@ -34,6 +35,11 @@ fn build_prompt(
 4. kicker 是时间/章节/主题短标记；page 从 01 开始编号，例如 01 / 03；footnote 是图片说明或补充注脚；source 只写原文或用户提供的来源，没有就留空。\n\
 5. imagePrompt 描述一张无文字、无字幕、无 logo 的横向编辑插画或地图，构图留白，适合放在卡片上半部分；不要要求模型生成文字。\n\
 6. 卡片之间要有顺序和区分度，不要只是换标题。信息不足时保持克制，不要编造。\n";
+    let system = if controls.trim().is_empty() {
+        system.to_string()
+    } else {
+        format!("{system}\n# 已加载预设与技能\n{controls}\n")
+    };
     let mut user = String::new();
     user.push_str(&format!(
         "# 项目\n标题：{project_title}\n简介：{project_brief}\n\n# 取材内容\n{source}\n\n"
@@ -47,7 +53,7 @@ fn build_prompt(
         user.push_str(instruction.trim());
         user.push('\n');
     }
-    (system.to_string(), user)
+    (system, user)
 }
 
 fn extract_json(raw: &str) -> Option<String> {
@@ -279,12 +285,56 @@ pub async fn generate_plan(
     let source_chars = source_content.chars().count();
     let expected = desired_count(source_chars);
     let source: String = source_content.chars().take(MAX_SOURCE_CHARS).collect();
+    let preset = library::preset_for_kind(workspace, "card", req.preset_id.as_deref()).await?;
+    if let Some(preset) = &preset {
+        if preset.meta.kind != "card" {
+            return Err(ApiError::bad_request("所选预设与文卡图类型不匹配"));
+        }
+    }
+    let mut skill_ids = if req.skill_ids.is_empty() {
+        preset
+            .as_ref()
+            .map(|p| p.meta.skill_ids.clone())
+            .unwrap_or_default()
+    } else {
+        req.skill_ids.clone()
+    };
+    let mut seen = std::collections::HashSet::new();
+    skill_ids.retain(|id| seen.insert(id.clone()));
+    let all_skills = library::list_skills(workspace).await?;
+    let used_skills: Vec<Skill> = skill_ids
+        .iter()
+        .filter_map(|id| {
+            all_skills
+                .iter()
+                .find(|skill| &skill.meta.id == id)
+                .cloned()
+        })
+        .collect();
+    let mut controls = String::new();
+    if let Some(preset) = &preset {
+        if !preset.content.trim().is_empty() {
+            controls.push_str(&format!(
+                "预设《{}》：\n{}\n",
+                preset.meta.name,
+                preset.content.trim().chars().take(2600).collect::<String>()
+            ));
+        }
+    }
+    for skill in &used_skills {
+        controls.push_str(&format!(
+            "技能《{}》：\n{}\n",
+            skill.meta.name,
+            skill.content.trim().chars().take(1600).collect::<String>()
+        ));
+    }
     let (system, user) = build_prompt(
         &record.meta.title,
         record.brief.trim(),
         &format!("《{source_title}》\n{source}"),
         &req.instruction,
         expected,
+        &controls,
     );
     let (raw, model) = call_text_model(workspace, client, &record.dir_path, &system, &user).await?;
     let (plans, mut warning) = parse_plans(&raw, expected)?;
@@ -359,11 +409,11 @@ mod tests {
     }
 
     #[test]
-    fn chooses_count_from_article_length() {
+    fn chooses_count_from_article_length_without_a_default_cap() {
         assert_eq!(desired_count(1), 1);
         assert_eq!(desired_count(500), 1);
         assert_eq!(desired_count(501), 2);
-        assert_eq!(desired_count(99_999), MAX_CARDS);
+        assert_eq!(desired_count(99_999), 200);
     }
 
     #[test]
