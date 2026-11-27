@@ -212,6 +212,12 @@ export function AssistantPanel({
             <p class="eyebrow">PROJECT ASSISTANT</p>
             <h2>项目助手</h2>
             <p class="assistant-sidebar-subtitle">{project.title} · 边看素材边改稿</p>
+            {app.data.config.textKernel !== 'api' ? (
+              <span class="assistant-tool-access assistant-tool-access-header" title="CLI 内核可读写文件、联网、运行脚本和浏览器">
+                <Icon name="sliders" size={12} />
+                完整权限
+              </span>
+            ) : null}
           </div>
           <IconButton icon="close" label="关闭助手" onClick={onClose} />
         </header>
@@ -238,12 +244,6 @@ export function AssistantPanel({
               </span>
             </div>
             <div class="assistant-toolbar-right">
-              {app.data.config.textKernel !== 'api' ? (
-                <span class="assistant-tool-access" title="CLI 内核可读写文件、联网、运行脚本和浏览器">
-                  <Icon name="sliders" size={13} />
-                  完整权限
-                </span>
-              ) : null}
               <span class="assistant-kernel">
                 <Icon name="code" size={13} />
                 {kernelLabel(kernel || app.data.config.textKernel)}

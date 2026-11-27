@@ -9022,3 +9022,38 @@ input[type="range"] {
   font-size: 10.5px;
   white-space: nowrap;
 }
+
+/* Keep the assistant toolbar on one row inside the 380px side column. */
+.assistant-sidebar .assistant-toolbar {
+  gap: 8px;
+  padding: 9px 14px;
+}
+
+.assistant-sidebar .assistant-mode {
+  gap: 0;
+  flex: 0 0 auto;
+}
+
+.assistant-sidebar .assistant-mode-label {
+  display: none;
+}
+
+.assistant-sidebar .assistant-toolbar-right {
+  margin-left: auto;
+  gap: 7px;
+}
+
+.assistant-tool-access-header {
+  margin-top: 6px;
+  width: fit-content;
+}
+
+@media (max-width: 720px) {
+  .assistant-sidebar .assistant-mode-label {
+    display: none;
+  }
+
+  .assistant-sidebar .assistant-toolbar-right {
+    margin-left: 0;
+  }
+}
