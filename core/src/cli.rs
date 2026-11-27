@@ -251,21 +251,55 @@ fn apply_args(args: &[String], prompt: &str) -> (Vec<String>, bool) {
 }
 
 fn append_access_args(kernel: Kernel, access_dirs: &[PathBuf], args: &mut Vec<String>) {
-    if kernel != Kernel::Claude || access_dirs.is_empty() {
+    if access_dirs.is_empty() {
         return;
     }
-    if !args
-        .iter()
-        .any(|arg| arg == "--dangerously-skip-permissions")
-    {
-        args.push("--dangerously-skip-permissions".to_string());
-    }
-    for dir in access_dirs {
-        if !dir.is_dir() {
-            continue;
+
+    let mut flags: Vec<String> = Vec::new();
+    match kernel {
+        // Claude Code: bypass every approval prompt and expose the workspace and
+        // HOME (including ~/.claude/skills) as readable/writable roots.
+        Kernel::Claude => {
+            flags.push("--dangerously-skip-permissions".to_string());
+            for dir in access_dirs.iter().filter(|dir| dir.is_dir()) {
+                flags.push("--add-dir".to_string());
+                flags.push(dir.to_string_lossy().to_string());
+            }
         }
-        args.push("--add-dir".to_string());
-        args.push(dir.to_string_lossy().to_string());
+        // Codex: yolo disables both approvals and the filesystem sandbox.
+        Kernel::Codex => {
+            flags.push("--dangerously-bypass-approvals-and-sandbox".to_string());
+        }
+        // OpenCode: --auto approves every request not explicitly denied. It has
+        // no additional-directory flag; the process is not sandboxed by default.
+        Kernel::Opencode => {
+            flags.push("--auto".to_string());
+        }
+        // There is no standard DeepSeek CLI permission flag. The launcher's own
+        // flag can be supplied in the kernel's extra arguments.
+        Kernel::Deepseek => return,
+    }
+
+    flags.retain(|flag| !args.iter().any(|arg| arg == flag));
+    if flags.is_empty() {
+        return;
+    }
+    // Codex takes the prompt as a positional argument. Insert flags before it
+    // so they are parsed as options, not as part of the task text.
+    let insert_at = args
+        .iter()
+        .position(|arg| arg.contains("{prompt}"))
+        .unwrap_or(args.len());
+    for (offset, flag) in flags.into_iter().enumerate() {
+        args.insert(insert_at + offset, flag);
+    }
+}
+
+fn apply_access_env(command: &mut Command, kernel: Kernel, access_dirs: &[PathBuf]) {
+    if kernel == Kernel::Opencode && !access_dirs.is_empty() {
+        // --auto still honors explicit deny rules; this is OpenCode's global
+        // allow policy for this assistant process.
+        command.env("OPENCODE_PERMISSION", "{\"\":\"allow\"}");
     }
 }
 
@@ -362,11 +396,14 @@ where
     } else {
         cli.args.clone()
     };
-    let (mut args, prompt_in_arg) = apply_args(&args, prompt);
+    let mut args = args;
     append_access_args(kernel, access_dirs, &mut args);
+    let (args, prompt_in_arg) = apply_args(&args, prompt);
 
+    let mut command = build_command(&binary, &args, cwd);
+    apply_access_env(&mut command, kernel, access_dirs);
     let started = Instant::now();
-    let mut child = build_command(&binary, &args, cwd).spawn().map_err(|err| {
+    let mut child = command.spawn().map_err(|err| {
         ApiError::new(
             StatusCode::CONFLICT,
             "CLI_START_FAILED",
@@ -598,10 +635,12 @@ pub async fn run_with_dirs(
     } else {
         cli.args.clone()
     };
-    let (mut args, prompt_in_arg) = apply_args(&args, prompt);
+    let mut args = args;
     append_access_args(kernel, access_dirs, &mut args);
+    let (args, prompt_in_arg) = apply_args(&args, prompt);
 
     let mut command = build_command(&binary, &args, cwd);
+    apply_access_env(&mut command, kernel, access_dirs);
 
     let started = Instant::now();
     let mut child = command.spawn().map_err(|err| {
@@ -705,21 +744,30 @@ mod tests {
     }
 
     #[test]
-    fn assistant_access_args_bypass_permissions_only_for_claude() {
+    fn assistant_access_args_cover_supported_kernels() {
+        let dirs = [PathBuf::from("/tmp")];
+
         let mut claude = vec!["-p".to_string()];
-        append_access_args(
-            Kernel::Claude,
-            &[PathBuf::from("/tmp"), PathBuf::from("/private/tmp")],
-            &mut claude,
-        );
+        append_access_args(Kernel::Claude, &dirs, &mut claude);
         assert!(claude
             .iter()
             .any(|arg| arg == "--dangerously-skip-permissions"));
         assert!(claude.iter().any(|arg| arg == "--add-dir"));
 
-        let mut codex = vec!["exec".to_string()];
-        append_access_args(Kernel::Codex, &[PathBuf::from("/tmp")], &mut codex);
-        assert_eq!(codex, vec!["exec"]);
+        let mut codex = vec!["exec".to_string(), "{prompt}".to_string()];
+        append_access_args(Kernel::Codex, &dirs, &mut codex);
+        assert!(codex
+            .iter()
+            .any(|arg| arg == "--dangerously-bypass-approvals-and-sandbox"));
+        assert_eq!(codex.last().map(String::as_str), Some("{prompt}"));
+
+        let mut opencode = vec!["run".to_string()];
+        append_access_args(Kernel::Opencode, &dirs, &mut opencode);
+        assert!(opencode.iter().any(|arg| arg == "--auto"));
+
+        let mut deepseek = Vec::new();
+        append_access_args(Kernel::Deepseek, &dirs, &mut deepseek);
+        assert!(deepseek.is_empty());
     }
 
     #[test]
