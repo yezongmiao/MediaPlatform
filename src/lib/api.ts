@@ -30,6 +30,7 @@ import type {
   Skill,
   TextKernel,
   DshResult,
+  FolderResult,
   SkillInput,
   VscodeResult,
   WorkspaceInfo,
@@ -247,6 +248,7 @@ export const api = {
   rescanProject: (id: string) => jsonRequest<Project>(`/api/projects/${id}/rescan`, 'POST', {}),
   openVscode: (id: string) => jsonRequest<VscodeResult>(`/api/projects/${id}/vscode`, 'POST', {}),
   openDsh: (id: string) => jsonRequest<DshResult>(`/api/projects/${id}/dsh`, 'POST', {}),
+  openFolder: (id: string) => jsonRequest<FolderResult>(`/api/projects/${id}/folder`, 'POST', {}),
   prepareContext: (id: string) =>
     jsonRequest<{ projectPath: string; filesWritten: string[] }>(
       `/api/projects/${id}/context`,

@@ -12,6 +12,7 @@ import { AssetEditor } from '../components/AssetEditor';
 import { AiCardStudio } from '../components/AiCardStudio';
 import { GenerateDialog } from '../components/GenerateDialog';
 import { ProjectSettings } from '../components/ProjectSettings';
+import { OpenProjectMenu } from '../components/OpenProjectMenu';
 import { Icon } from '../components/Icon';
 import { Badge, Button, ConfirmDialog, EmptyState, Modal, Skeleton } from '../components/ui';
 import { navigate, useQueryParam } from '../lib/router';
@@ -47,6 +48,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
   const [cardGroupView, setCardGroupView] = useState<{ assets: Asset[]; kind: 'card' | 'illustration' } | null>(null);
   const [vscodeLoading, setVscodeLoading] = useState(false);
   const [dshLoading, setDshLoading] = useState(false);
+  const [folderLoading, setFolderLoading] = useState(false);
   const [vscodeFallback, setVscodeFallback] = useState<VscodeFallback | null>(null);
   const [uploadKind, setUploadKind] = useState<Kind | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -158,6 +160,20 @@ export function ProjectPage({ projectId }: { projectId: string }) {
       app.toast({ message: apiErr?.message ?? '打开 DeepSeek Harness 失败', tone: 'error' });
     } finally {
       setDshLoading(false);
+    }
+  };
+
+  const openFolder = async () => {
+    if (!project) return;
+    setFolderLoading(true);
+    try {
+      const result = await api.openFolder(project.id);
+      app.toast({ message: result.message, tone: 'success' });
+    } catch (err) {
+      const apiErr = err instanceof ApiError ? err : null;
+      app.toast({ message: apiErr?.message ?? '打开文件管理器失败', tone: 'error' });
+    } finally {
+      setFolderLoading(false);
     }
   };
 
@@ -366,12 +382,14 @@ export function ProjectPage({ projectId }: { projectId: string }) {
             >
               {assistantOpen ? '收起助手' : '助手'}
             </Button>
-            <Button variant="secondary" icon="code" loading={vscodeLoading} onClick={openVscode}>
-              在 VSCode 打开
-            </Button>
-            <Button variant="secondary" icon="external" loading={dshLoading} onClick={openDsh}>
-              在 DeepSeek Harness 打开
-            </Button>
+            <OpenProjectMenu
+              onVscode={openVscode}
+              onDsh={openDsh}
+              onFolder={openFolder}
+              vscodeLoading={vscodeLoading}
+              dshLoading={dshLoading}
+              folderLoading={folderLoading}
+            />
             <button class="icon-btn icon-btn-soft" title="项目设置" aria-label="项目设置" onClick={() => setSettingsOpen(true)}>
               <Icon name="settings" size={18} />
             </button>
@@ -519,7 +537,7 @@ export function ProjectPage({ projectId }: { projectId: string }) {
               </div>
               <p class="panel-text">
                 自动生成 <code>AGENTS.md</code>、<code>CLAUDE.md</code>、技能与预设副本、提示词快照目录和
-                VSCode 配置，外部 AI 打开即可读懂项目。DeepSeek Harness 按钮会刷新这些上下文，并切到已打开的桌面窗口（工作区以该窗口为准）。
+                VSCode 配置，外部 AI 打开即可读懂项目。「打开」菜单可启动 VS Code、唤起 DeepSeek Harness 桌面窗口，或直接在文件管理器中显示项目目录。
               </p>
               <div class="vscode-file-list">
                 {['AGENTS.md', 'CLAUDE.md', '.vscode/', 'skills/', 'presets/', 'prompts/'].map((item) => (
@@ -527,15 +545,17 @@ export function ProjectPage({ projectId }: { projectId: string }) {
                 ))}
               </div>
               <div class="panel-actions">
-                <Button variant="secondary" icon="code" loading={vscodeLoading} onClick={openVscode}>
-                  打开 VSCode
-                </Button>
-                <Button variant="secondary" icon="external" loading={dshLoading} onClick={openDsh}>
-                  打开 DeepSeek Harness
-                </Button>
+                <OpenProjectMenu
+                  onVscode={openVscode}
+                  onDsh={openDsh}
+                  onFolder={openFolder}
+                  vscodeLoading={vscodeLoading}
+                  dshLoading={dshLoading}
+                  folderLoading={folderLoading}
+                />
                 <Button
                   variant="ghost"
-                  icon="folder-open"
+                  icon="refresh"
                   onClick={async () => {
                     const result = await api.prepareContext(project.id).catch((err) => err as ApiError);
                     if (result instanceof ApiError) {

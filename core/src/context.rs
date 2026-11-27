@@ -500,3 +500,52 @@ pub async fn prepare_only(workspace: &Path, project_id: &str) -> ApiResult<Conte
         files_written: prepared.files,
     })
 }
+
+/// Open the project directory in the platform file manager. This only launches
+/// the file manager; it does not refresh context files.
+pub async fn open_folder(workspace: &Path, project_id: &str) -> ApiResult<FolderResult> {
+    let record = require_project(workspace, project_id).await?;
+    let path = record.dir_path;
+    if !path.is_dir() {
+        return Err(ApiError::not_found("项目目录不存在"));
+    }
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = tokio::process::Command::new("open");
+        command.arg(&path);
+        command
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = tokio::process::Command::new("explorer");
+        command.arg(&path);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = tokio::process::Command::new("xdg-open");
+        command.arg(&path);
+        command
+    };
+
+    command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|err| {
+            ApiError::new(
+                axum::http::StatusCode::CONFLICT,
+                "FOLDER_OPEN_FAILED",
+                format!("无法打开文件管理器：{err}"),
+            )
+            .with_details(json!({ "projectPath": path.to_string_lossy() }))
+        })?;
+
+    Ok(FolderResult {
+        ok: true,
+        path: path.to_string_lossy().to_string(),
+        message: "已在文件管理器中打开项目目录".into(),
+    })
+}

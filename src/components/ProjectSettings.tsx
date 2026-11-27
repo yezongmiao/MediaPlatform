@@ -256,11 +256,11 @@ export function ProjectSettings({
           <section class="settings-section settings-note-block">
             <Icon name="code" size={18} />
             <div>
-              <h3>VSCode 工程说明</h3>
+              <h3>外部工作区说明</h3>
               <p>
-                点击项目页的「在 VSCode 打开」会生成 <code>AGENTS.md</code>、<code>CLAUDE.md</code>、
-                <code>.vscode/</code>、<code>skills/</code>、<code>presets/</code> 与
-                <code>.mediadesk/context.json</code>，然后调用本机 <code>code</code> 命令。
+                项目页的「打开」菜单可以进入 VS Code、DeepSeek Harness 或文件管理器。进入 VS Code 时会生成
+                <code>AGENTS.md</code>、<code>CLAUDE.md</code>、<code>.vscode/</code>、<code>skills/</code>、
+                <code>presets/</code> 与 <code>.mediadesk/context.json</code>，然后调用本机 <code>code</code> 命令。
               </p>
             </div>
           </section>

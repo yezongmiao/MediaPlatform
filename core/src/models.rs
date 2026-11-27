@@ -876,6 +876,14 @@ pub struct VscodeResult {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FolderResult {
+    pub ok: bool,
+    pub path: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DshResult {
     pub ok: bool,
     pub url: String,

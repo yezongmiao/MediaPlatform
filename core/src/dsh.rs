@@ -115,7 +115,7 @@ fn start_error(
     let hint = "请确认 DeepSeek Harness 已安装，且 `dsh web` 可以在终端启动。可通过 MEDIADESK_DSH_BIN 指定 dsh 路径。";
     let mut detail = message.into();
     if !stderr.trim().is_empty() {
-        detail.push_str("：");
+        detail.push('：');
         detail.push_str(
             stderr
                 .trim()

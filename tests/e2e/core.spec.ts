@@ -132,9 +132,14 @@ test('creator workflow: capture → project → create → generate → VSCode �
   );
   expect(snapshots.some((file) => !file.endsWith('README.md'))).toBeTruthy();
 
-  // 6. Open in VSCode (fake CLI) and verify generated context on disk
-  await expect(page.getByRole('button', { name: '在 DeepSeek Harness 打开' })).toBeVisible();
-  await page.getByRole('button', { name: '在 VSCode 打开' }).click();
+  // 6. Open the unified launch menu; VSCode uses the fake CLI.
+  await page.locator('.project-header-actions').getByRole('button', { name: '打开', exact: true }).click();
+  const openMenu = page.getByRole('menu');
+  await expect(openMenu).toBeVisible();
+  await expect(openMenu.getByRole('menuitem').filter({ hasText: '在 VS Code 打开' })).toBeVisible();
+  await expect(openMenu.getByRole('menuitem').filter({ hasText: '在 DeepSeek Harness 打开' })).toBeVisible();
+  await expect(openMenu.getByRole('menuitem').filter({ hasText: '在文件管理器中显示' })).toBeVisible();
+  await openMenu.getByRole('menuitem').filter({ hasText: '在 VS Code 打开' }).click();
   await expect(page.locator('.toast-host')).toContainText('已生成 AI 上下文文件并打开 VS Code');
   for (const rel of [
     'AGENTS.md',

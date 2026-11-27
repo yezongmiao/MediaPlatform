@@ -419,6 +419,12 @@ export interface DshResult {
   message: string;
 }
 
+export interface FolderResult {
+  ok: boolean;
+  path: string;
+  message: string;
+}
+
 export interface SearchResult {
   query: string;
   ideas: Idea[];
