@@ -115,16 +115,20 @@ async fn build_context(
 你是「媒材工坊」的项目助手。你熟悉当前项目与全部素材，可以讨论内容，也可以提出对素材的完整修改。\n\n\
 只输出一个 JSON 对象，不要 markdown 代码围栏，不要输出 JSON 以外的文字。格式：\n\
 {\"reply\":\"给创作者看的回复\",\"edits\":[{\"assetId\":\"已有素材 id\",\"title\":\"可选的新标题\",\"content\":\"完整替换后的正文\",\"summary\":\"一句话改动摘要\"}],\"newAssets\":[{\"kind\":\"card\",\"title\":\"新素材标题\",\"content\":\"完整正文或卡片文案\",\"summary\":\"一句话说明\"}]}\n\n\
+# 工具权限\n\
+如果当前文本内核是本机 CLI，你拥有完整工具权限：可以直接读取项目外目录（包括 ~/.claude/skills）、访问网络、运行 Shell 和无头浏览器、生成 PNG/JPG 并写入项目。不要声称“权限被拦截”“沙盒之外”“没有浏览器环境”；缺少运行库时先安装或查找可用环境，不要只解释限制。\n\
+生成二进制插图时：把文件写入项目的 illustration/ 目录，并创建同名 .md sidecar；frontmatter 至少包含 id、kind: illustration、title、status、tags、createdAt、updatedAt、file。不要把二进制塞进 JSON；在 reply 中报告文件路径。\n\
+如果当前是 API 内核，没有工具权限，只能按 JSON 协议返回文本。\n\n\
 规则：\n\
 1. edits 只能修改上面列出的已有 assetId，禁止编造已有素材的 id。\n\
 2. edits.content 必须是完整替换内容，不要给 diff 或片段。只改标题时可省略 content。\n\
 3. 当用户明确要求新增素材，或某一类目录为空、确实需要创建时，使用 newAssets；新建素材不要填写 assetId。\n\
 4. newAssets 的 kind 只能是 article / script / card；title 和 content 必须完整可保存。\n\
-5. 新建文卡图时，content 写卡片主张和补充文案；实际 PNG 由「AI 文卡图」生成。\n\
+5. 新建文卡图时，content 写卡片主张和补充文案；成品 PNG 可直接用工具生成并写 sidecar，也可以交给「AI 文卡图」。\n\
 6. 没有修改或新建时，edits 与 newAssets 都必须是空数组。\n\
 7. 不编造事实、来源和数据；信息不足时在 reply 中提问。\n\
 8. 直接、具体、克制，使用简体中文。\n\
-9. 建议式下，如果创作者表示同意，提醒对方点击「采纳并写入」；不要声称已经写入。\n\n",
+9. 建议式只限制 edits 是否自动写入；当创作者明确要求执行、生成文件、截图或运行脚本时，应直接使用工具完成并如实报告，不要用“接口只能返回文本”拒绝。\n\n",
     );
     if mode == "apply" {
         system.push_str("当前模式：直接覆盖。服务端会把 edits 写入素材。\n");
@@ -385,6 +389,15 @@ async fn create_assets(
     (created, warnings)
 }
 
+fn assistant_access_dirs(workspace: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut dirs = vec![workspace.to_path_buf()];
+    if let Some(home) = std::env::var_os("HOME") {
+        dirs.push(std::path::PathBuf::from(home));
+    }
+    dirs.retain(|path| path.is_dir());
+    dirs
+}
+
 pub async fn chat(
     workspace: &std::path::Path,
     client: &reqwest::Client,
@@ -408,11 +421,13 @@ pub async fn chat(
             ApiError::bad_request(format!("不支持的文本内核：{}", prepared.config.text_kernel))
         })?;
         let prompt = format!("{}\n\n{}", prepared.system, prepared.user);
-        let out = cli::run(
+        let access_dirs = assistant_access_dirs(workspace);
+        let out = cli::run_with_dirs(
             &prepared.record.dir_path,
             &prepared.config.cli,
             kernel,
             &prompt,
+            &access_dirs,
         )
         .await?;
         (out.content, out.model, kernel.id().to_string())
@@ -502,12 +517,14 @@ async fn chat_stream_inner(
             ApiError::bad_request(format!("不支持的文本内核：{}", prepared.config.text_kernel))
         })?;
         let prompt = format!("{}\n\n{}", prepared.system, prepared.user);
+        let access_dirs = assistant_access_dirs(workspace);
         let delta_tx = tx.clone();
-        let out = cli::run_stream(
+        let out = cli::run_stream_with_dirs(
             &prepared.record.dir_path,
             &prepared.config.cli,
             kernel,
             &prompt,
+            &access_dirs,
             move |delta| {
                 let _ = delta_tx.send(AssistantStreamEvent::Delta {
                     text: delta.to_string(),

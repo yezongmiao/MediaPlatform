@@ -9010,3 +9010,15 @@ input[type="range"] {
     right: auto;
   }
 }
+
+.assistant-tool-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--jade) 10%, transparent);
+  color: var(--jade);
+  font-size: 10.5px;
+  white-space: nowrap;
+}

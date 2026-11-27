@@ -132,9 +132,11 @@ export function AssistantPanel({
       setWarnings(response.warnings);
       setStreamText('');
       setStreamStatus('');
+      // CLI 内核可以绕过建议协议直接写文件；始终刷新一次，让新建的
+      // 二进制插图或 sidecar 立即出现在素材列表中。
+      await onChanged();
+      await Promise.all([app.refreshProjects(), app.refreshWorkspace()]);
       if (response.applied) {
-        await onChanged();
-        await Promise.all([app.refreshProjects(), app.refreshWorkspace()]);
         app.toast({ message: '助手已更新项目素材', tone: 'success' });
       }
     } catch (err) {
@@ -236,6 +238,12 @@ export function AssistantPanel({
               </span>
             </div>
             <div class="assistant-toolbar-right">
+              {app.data.config.textKernel !== 'api' ? (
+                <span class="assistant-tool-access" title="CLI 内核可读写文件、联网、运行脚本和浏览器">
+                  <Icon name="sliders" size={13} />
+                  完整权限
+                </span>
+              ) : null}
               <span class="assistant-kernel">
                 <Icon name="code" size={13} />
                 {kernelLabel(kernel || app.data.config.textKernel)}

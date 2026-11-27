@@ -250,6 +250,25 @@ fn apply_args(args: &[String], prompt: &str) -> (Vec<String>, bool) {
     (rendered, prompt_in_arg)
 }
 
+fn append_access_args(kernel: Kernel, access_dirs: &[PathBuf], args: &mut Vec<String>) {
+    if kernel != Kernel::Claude || access_dirs.is_empty() {
+        return;
+    }
+    if !args
+        .iter()
+        .any(|arg| arg == "--dangerously-skip-permissions")
+    {
+        args.push("--dangerously-skip-permissions".to_string());
+    }
+    for dir in access_dirs {
+        if !dir.is_dir() {
+            continue;
+        }
+        args.push("--add-dir".to_string());
+        args.push(dir.to_string_lossy().to_string());
+    }
+}
+
 fn build_command(binary: &Path, args: &[String], cwd: &Path) -> Command {
     let mut command = {
         #[cfg(windows)]
@@ -291,6 +310,22 @@ pub async fn run_stream<F>(
     cli: &CliConfig,
     kernel: Kernel,
     prompt: &str,
+    on_delta: F,
+) -> ApiResult<CliOutcome>
+where
+    F: FnMut(&str) + Send,
+{
+    run_stream_with_dirs(cwd, cli, kernel, prompt, &[], on_delta).await
+}
+
+/// Like `run_stream`, but allows a Claude CLI assistant to use tools outside
+/// the project directory. Other kernels ignore the extra access directories.
+pub async fn run_stream_with_dirs<F>(
+    cwd: &Path,
+    cli: &CliConfig,
+    kernel: Kernel,
+    prompt: &str,
+    access_dirs: &[PathBuf],
     mut on_delta: F,
 ) -> ApiResult<CliOutcome>
 where
@@ -327,7 +362,8 @@ where
     } else {
         cli.args.clone()
     };
-    let (args, prompt_in_arg) = apply_args(&args, prompt);
+    let (mut args, prompt_in_arg) = apply_args(&args, prompt);
+    append_access_args(kernel, access_dirs, &mut args);
 
     let started = Instant::now();
     let mut child = build_command(&binary, &args, cwd).spawn().map_err(|err| {
@@ -532,6 +568,17 @@ pub async fn run(
     kernel: Kernel,
     prompt: &str,
 ) -> ApiResult<CliOutcome> {
+    run_with_dirs(cwd, cli, kernel, prompt, &[]).await
+}
+
+/// Like `run`, but grants a Claude CLI full tool access and extra read roots.
+pub async fn run_with_dirs(
+    cwd: &Path,
+    cli: &CliConfig,
+    kernel: Kernel,
+    prompt: &str,
+    access_dirs: &[PathBuf],
+) -> ApiResult<CliOutcome> {
     let binary = resolve(cli, kernel).ok_or_else(|| {
         missing_error(
             kernel,
@@ -551,7 +598,8 @@ pub async fn run(
     } else {
         cli.args.clone()
     };
-    let (args, prompt_in_arg) = apply_args(&args, prompt);
+    let (mut args, prompt_in_arg) = apply_args(&args, prompt);
+    append_access_args(kernel, access_dirs, &mut args);
 
     let mut command = build_command(&binary, &args, cwd);
 
@@ -654,6 +702,24 @@ mod tests {
 
         assert!(failure_hint(Kernel::Claude, "network unavailable").is_none());
         assert!(failure_hint(Kernel::Codex, "--profile <name> is required").is_none());
+    }
+
+    #[test]
+    fn assistant_access_args_bypass_permissions_only_for_claude() {
+        let mut claude = vec!["-p".to_string()];
+        append_access_args(
+            Kernel::Claude,
+            &[PathBuf::from("/tmp"), PathBuf::from("/private/tmp")],
+            &mut claude,
+        );
+        assert!(claude
+            .iter()
+            .any(|arg| arg == "--dangerously-skip-permissions"));
+        assert!(claude.iter().any(|arg| arg == "--add-dir"));
+
+        let mut codex = vec!["exec".to_string()];
+        append_access_args(Kernel::Codex, &[PathBuf::from("/tmp")], &mut codex);
+        assert_eq!(codex, vec!["exec"]);
     }
 
     #[test]
