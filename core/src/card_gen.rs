@@ -5,7 +5,6 @@ use crate::cli::{self, Kernel};
 use crate::error::{ApiError, ApiResult};
 use crate::library;
 use crate::llm;
-use crate::media_gen;
 use crate::models::*;
 use crate::store::{self, require_project};
 
@@ -27,13 +26,13 @@ fn build_prompt(
 ) -> (String, String) {
     let system = "MEDIADESK_CARD_PROTOCOL\n\
 你是中文视觉编辑，负责把文章做成一组 1080×1440 的编辑式文卡图。只输出一个 JSON 对象，不要 markdown 围栏，不要 JSON 以外文字。\n\
-输出格式：{\"cards\":[{\"kicker\":\"左上角短标记，如 前202 / 2026·11\",\"page\":\"右上角页码，如 04 / 04\",\"title\":\"主标题\",\"body\":[\"正文第一段\",\"正文第二段\"],\"footnote\":\"图注或一句注脚\",\"source\":\"底图/资料来源\",\"imagePrompt\":\"无文字的编辑插画或地图提示词\"}]}\n\
+输出格式：{\"cards\":[{\"kicker\":\"左上角短标记，如 前202 / 2026·11\",\"page\":\"右上角页码，如 04 / 04\",\"title\":\"主标题\",\"body\":[\"正文第一段\",\"正文第二段\"],\"footnote\":\"图注或一句注脚\",\"source\":\"底图/资料来源\"}]}\n\
 规则：\n\
 1. 根据文章长度和内容生成指定数量的卡片；每张卡片对应文章中的一个独立观点/段落，不要重复同一句。\n\
 2. 标题 6–22 个汉字，像杂志标题，不写空泛口号。\n\
 3. body 2–4 段，每段 12–55 个汉字，可直接排版；必须来自原文事实，不编造人物、时间、数字或来源。\n\
 4. kicker 是时间/章节/主题短标记；page 从 01 开始编号，例如 01 / 03；footnote 是图片说明或补充注脚；source 只写原文或用户提供的来源，没有就留空。\n\
-5. imagePrompt 描述一张无文字、无字幕、无 logo 的横向编辑插画或地图，构图留白，适合放在卡片上半部分；不要要求模型生成文字。\n\
+5. 卡片只使用文字排版，不生成、不调用任何图像模型；视觉层次由 kicker、标题、正文、注脚和来源完成。\n\
 6. 卡片之间要有顺序和区分度，不要只是换标题。信息不足时保持克制，不要编造。\n";
     let system = if controls.trim().is_empty() {
         system.to_string()
@@ -97,10 +96,6 @@ fn clean_plan(mut plan: CardPlan) -> ApiResult<CardPlan> {
         .filter(|line| !line.is_empty())
         .take(MAX_BODY_ITEMS)
         .collect();
-    plan.image_prompt = plan
-        .image_prompt
-        .map(|prompt| clean_text(&prompt, 700))
-        .filter(|prompt| !prompt.is_empty());
     if plan.title.is_empty() {
         return Err(ApiError::new(
             axum::http::StatusCode::BAD_GATEWAY,
@@ -207,52 +202,6 @@ async fn call_text_model(
     }
 }
 
-async fn generate_image(
-    workspace: &std::path::Path,
-    client: &reqwest::Client,
-    project_id: &str,
-    plan: &CardPlan,
-) -> (Option<String>, Option<String>, Option<String>) {
-    let Some(image_prompt) = plan.image_prompt.clone() else {
-        return (
-            None,
-            None,
-            Some("模型没有给出这张卡片的配图提示词。".to_string()),
-        );
-    };
-    let config = match store::load_config(workspace).await {
-        Ok(config) => config,
-        Err(err) => return (None, None, Some(err.message)),
-    };
-    let prompt = format!(
-        "编辑插画，无文字、无字幕、无 logo。{image_prompt}\n风格：纸质纹理、克制配色、大留白、适合作为 1080×1440 文卡图上部的横向画面。"
-    );
-    let req = GenerateRequest {
-        project_id: Some(project_id.to_string()),
-        idea_ids: Vec::new(),
-        kind: "illustration".to_string(),
-        preset_id: None,
-        skill_ids: Vec::new(),
-        instruction: format!("{} · AI 文卡底图", plan.title),
-    };
-    let compiled = PromptResult {
-        prompt,
-        system: String::new(),
-        user: String::new(),
-        kind: "illustration".to_string(),
-        preset: None,
-        skills: Vec::new(),
-    };
-    match media_gen::generate(workspace, client, &config, req, compiled).await {
-        Ok(outcome) => (
-            outcome.asset.file_url.clone(),
-            Some(outcome.asset.meta.id),
-            None,
-        ),
-        Err(err) => (None, None, Some(err.message)),
-    }
-}
-
 pub async fn generate_plan(
     workspace: &std::path::Path,
     client: &reqwest::Client,
@@ -341,52 +290,10 @@ pub async fn generate_plan(
 
     let mut cards = Vec::new();
     for plan in plans {
-        let (image_url, image_asset_id, image_warning) = if req.with_image {
-            generate_image(workspace, client, project_id, &plan).await
-        } else {
-            (None, None, None)
-        };
-        cards.push(GeneratedCard {
-            plan,
-            image_url,
-            image_asset_id,
-            image_warning,
-        });
+        cards.push(GeneratedCard { plan });
     }
 
-    // Put all successfully generated card illustrations into one visual group
-    // so the illustration manager can show them as a stack instead of loose files.
-    let image_assets: Vec<String> = cards
-        .iter()
-        .filter_map(|card| card.image_asset_id.clone())
-        .collect();
-    if !image_assets.is_empty() {
-        let group_id = format!("image-group-{}", store::new_id());
-        let group_title = format!(
-            "{} · AI 配图",
-            source_title.chars().take(60).collect::<String>()
-        );
-        let total = image_assets.len();
-        for (index, asset_id) in image_assets.iter().enumerate() {
-            if let Err(err) = assets::set_asset_group(
-                workspace,
-                project_id,
-                asset_id,
-                &group_id,
-                &group_title,
-                index + 1,
-                total,
-            )
-            .await
-            {
-                eprintln!("warning: could not group card illustration {asset_id}: {err}");
-            }
-        }
-    }
-    if cards.is_empty() {
-        warning = Some("没有生成可用的文卡图。".to_string());
-    }
-
+    let warning = warning.take();
     Ok(CardPlanResponse {
         cards,
         model,

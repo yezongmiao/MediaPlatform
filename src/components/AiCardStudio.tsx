@@ -16,15 +16,6 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   });
 }
 
-function loadImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error('配图加载失败'));
-    image.src = url;
-  });
-}
-
 export function AiCardStudio({
   project,
   open,
@@ -38,17 +29,13 @@ export function AiCardStudio({
 }) {
   const app = useApp();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageCache = useRef(new Map<string, HTMLImageElement>());
   const [sources, setSources] = useState<Array<{ id: string; title: string }>>([]);
   const [sourceId, setSourceId] = useState('');
   const [instruction, setInstruction] = useState('');
-  const [withImage, setWithImage] = useState(true);
   const [presetId, setPresetId] = useState('');
   const [skillIds, setSkillIds] = useState<string[]>([]);
   const [cards, setCards] = useState<GeneratedCard[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [activeImage, setActiveImage] = useState<HTMLImageElement | null>(null);
-  const [imageLoadError, setImageLoadError] = useState('');
   const [meta, setMeta] = useState<{
     model: string;
     latencyMs: number;
@@ -83,57 +70,22 @@ export function AiCardStudio({
     setError('');
   }, [open, project.assets.article, project.assets.script, app.data.presets]);
 
-  useEffect(() => {
-    if (!activeCard?.imageUrl) {
-      setActiveImage(null);
-      setImageLoadError('');
-      return;
-    }
-    let cancelled = false;
-    const cached = imageCache.current.get(activeCard.imageUrl);
-    if (cached) {
-      setActiveImage(cached);
-      setImageLoadError('');
-      return;
-    }
-    loadImage(activeCard.imageUrl)
-      .then((loaded) => {
-        imageCache.current.set(activeCard.imageUrl!, loaded);
-        if (!cancelled) {
-          setActiveImage(loaded);
-          setImageLoadError('');
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setActiveImage(null);
-          setImageLoadError('配图加载失败，已退回纯文字版。');
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeCard?.imageUrl, activeCard]);
-
   useLayoutEffect(() => {
     if (!open || !activePlan || !canvasRef.current) return;
-    drawEditorialCard(canvasRef.current, { plan: activePlan, theme, image: activeImage });
-  }, [open, activePlan, activeIndex, theme, activeImage]);
+    drawEditorialCard(canvasRef.current, { plan: activePlan, theme });
+  }, [open, activePlan, activeIndex, theme]);
 
   const generate = async () => {
     setLoading(true);
     setError('');
     setCards([]);
     setActiveIndex(0);
-    setActiveImage(null);
-    setImageLoadError('');
     setMeta(null);
     setSaveProgress('');
     try {
       const result = await api.generateCardPlan(project.id, {
         sourceAssetId: sourceId || undefined,
         instruction,
-        withImage,
         presetId: presetId || undefined,
         skillIds,
       });
@@ -158,20 +110,8 @@ export function AiCardStudio({
   };
 
   const renderCardBlob = async (card: GeneratedCard): Promise<Blob> => {
-    let image: HTMLImageElement | null = null;
-    if (card.imageUrl) {
-      image = imageCache.current.get(card.imageUrl) ?? null;
-      if (!image) {
-        try {
-          image = await loadImage(card.imageUrl);
-          imageCache.current.set(card.imageUrl, image);
-        } catch {
-          image = null;
-        }
-      }
-    }
     const canvas = document.createElement('canvas');
-    drawEditorialCard(canvas, { plan: card.plan, theme, image });
+    drawEditorialCard(canvas, { plan: card.plan, theme });
     return canvasToBlob(canvas);
   };
 
@@ -228,13 +168,13 @@ export function AiCardStudio({
       open={open}
       onClose={onClose}
       title="AI 文卡图"
-      subtitle="根据文章长度生成多张 1080×1440 编辑式 PNG；可选 AI 配图。"
+      subtitle="由当前文本/多模态内核生成文案，本地排版为多张 1080×1440 PNG。"
       size="full"
       class="ai-card-modal"
       footer={
         <>
           <span class="shortcut-hint">
-            {cards.length ? `${cards.length} 张 · 已按文章长度 ${meta?.sourceChars ?? 0} 字生成` : '文本企划 + 可选媒体配图 · 1080×1440 PNG'}
+            {cards.length ? `${cards.length} 张 · 已按文章长度 ${meta?.sourceChars ?? 0} 字生成` : '文本企划 + 本地排版 · 1080×1440 PNG'}
           </span>
           <div class="modal-actions">
             <Button variant="secondary" icon="download" disabled={!activePlan || saving} onClick={download}>
@@ -255,14 +195,14 @@ export function AiCardStudio({
               <div class="ai-card-placeholder">
                 <Icon name="cards" size={34} />
                 <h3>把一篇文章变成一组可保存的卡片</h3>
-                <p>文章越长，生成的卡片越多；大模型会拆出不同观点，分别排版标题、正文、注脚与配图。</p>
+                <p>文章越长，生成的卡片越多；模型会拆出不同观点，本地排版标题、正文、注脚与来源。</p>
               </div>
             ) : null}
             {loading ? (
               <div class="ai-card-loading">
                 <span class="spinner" />
                 <strong>正在拆解文章并排版…</strong>
-                <small>{withImage ? '会为每张卡片逐张生成配图，可能需要较久。' : '只生成文本方案，不调用图像模型。'}</small>
+                <small>只调用当前文本/多模态内核生成文案，不调用图像模型。</small>
               </div>
             ) : null}
           </div>
@@ -287,13 +227,7 @@ export function AiCardStudio({
                 ? `第 ${activeIndex + 1} / ${cards.length} 张 · 模型 ${meta?.model ?? '—'} · ${meta?.latencyMs ?? 0}ms`
                 : '1080 × 1440 · 3:4'}
             </span>
-            <span>
-              {activeImage ? (
-                <><Icon name="image" size={12} /> 已带入 AI 配图</>
-              ) : (
-                '纯文字排版'
-              )}
-            </span>
+            <span>纯文字排版 · 本地渲染</span>
           </div>
         </div>
 
@@ -353,22 +287,10 @@ export function AiCardStudio({
               class="textarea"
               rows={4}
               value={instruction}
-              placeholder="例如：突出秦汉之际的时间线；配图用古地图质感，但不要出现文字。"
+              placeholder="例如：突出秦汉之际的时间线；语气克制，标题有杂志感。"
               onInput={(e) => setInstruction((e.target as HTMLTextAreaElement).value)}
             />
           </Field>
-          <label class="ai-card-toggle">
-            <input
-              type="checkbox"
-              checked={withImage}
-              onChange={(e) => setWithImage((e.target as HTMLInputElement).checked)}
-            />
-            <span>
-              <strong>生成 AI 配图</strong>
-              <small>会为每张卡片逐张调用图像模型；未配置或失败时自动退回纯文字版。</small>
-            </span>
-          </label>
-
           <Button variant="primary" icon="spark" loading={loading} onClick={generate}>
             {cards.length ? '重新生成' : '生成文卡图'}
           </Button>
@@ -378,25 +300,13 @@ export function AiCardStudio({
             </p>
           ) : null}
           <p class="settings-note">
-            正文与来源由文本模型按原文提炼，请在导出前核对。配图会作为独立插图素材保存到项目。
+            正文与来源由文本模型按原文提炼，请在导出前核对；卡片只在本地排版保存，不调用图像模型。
           </p>
 
           {meta?.warning ? (
             <div class="ai-card-warning">
               <Icon name="alert" size={14} />
               <span>{meta.warning}</span>
-            </div>
-          ) : null}
-          {activeCard?.imageWarning ? (
-            <div class="ai-card-warning">
-              <Icon name="alert" size={14} />
-              <span>{activeCard.imageWarning}</span>
-            </div>
-          ) : null}
-          {imageLoadError ? (
-            <div class="ai-card-warning">
-              <Icon name="alert" size={14} />
-              <span>{imageLoadError}</span>
             </div>
           ) : null}
           {error ? <InlineError message={error} /> : null}

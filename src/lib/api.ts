@@ -225,7 +225,7 @@ export const api = {
     jsonRequest<PromptResult>('/api/llm/prompt', 'POST', payload),
   generateCardPlan: (
     projectId: string,
-    payload: { sourceAssetId?: string; instruction: string; withImage: boolean; presetId?: string; skillIds?: string[] },
+    payload: { sourceAssetId?: string; instruction: string; presetId?: string; skillIds?: string[] },
   ) =>
     jsonRequest<CardPlanResponse>(`/api/projects/${projectId}/card/plan`, 'POST', payload),
   generate: (payload: GenerateRequest) =>

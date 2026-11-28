@@ -520,14 +520,10 @@ export interface CardPlan {
   body: string[];
   footnote: string;
   source: string;
-  imagePrompt?: string;
 }
 
 export interface GeneratedCard {
   plan: CardPlan;
-  imageUrl?: string;
-  imageAssetId?: string;
-  imageWarning?: string;
 }
 
 export interface CardPlanResponse {

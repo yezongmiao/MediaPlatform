@@ -812,8 +812,6 @@ pub struct CardPlan {
     pub footnote: String,
     #[serde(default)]
     pub source: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image_prompt: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -824,8 +822,6 @@ pub struct CardPlanRequest {
     #[serde(default)]
     pub instruction: String,
     #[serde(default)]
-    pub with_image: bool,
-    #[serde(default)]
     pub preset_id: Option<String>,
     #[serde(default)]
     pub skill_ids: Vec<String>,
@@ -835,12 +831,6 @@ pub struct CardPlanRequest {
 #[serde(rename_all = "camelCase")]
 pub struct GeneratedCard {
     pub plan: CardPlan,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image_asset_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image_warning: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]

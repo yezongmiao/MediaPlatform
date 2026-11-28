@@ -741,33 +741,6 @@ test('AI card studio generates an editorial PNG and saves it', async ({ page, re
     data: { kernel: 'claude', binary: null, args: [], timeoutSecs: 60 },
   });
   expect(kernel.ok()).toBeTruthy();
-  const media = await request.put('/api/config/media', {
-    data: {
-      illustration: {
-        baseUrl: MOCK_URL,
-        apiKey: 'media-key',
-        model: 'mock-image-e2e',
-        protocol: 'openai',
-        createPath: '',
-        statusPath: '',
-        style: '暖纸色编辑插画',
-      },
-      video: {
-        baseUrl: MOCK_URL,
-        apiKey: 'media-key',
-        model: 'mock-video-e2e',
-        protocol: 'openai',
-        createPath: '/videos',
-        statusPath: '',
-        style: '纪实慢镜头',
-      },
-      timeoutSecs: 30,
-      pollIntervalSecs: 1,
-      videoTimeoutSecs: 60,
-    },
-  });
-  expect(media.ok()).toBeTruthy();
-
   await page.goto(`/projects/${project.id}`);
   await page.locator('.project-tab').filter({ hasText: '文卡图' }).click();
   await page.getByRole('button', { name: 'AI 文卡图' }).click();
@@ -775,7 +748,7 @@ test('AI card studio generates an editorial PNG and saves it', async ({ page, re
   await expect(studio).toBeVisible();
   await studio.getByRole('button', { name: '生成文卡图' }).click();
   await expect(studio.getByRole('button', { name: '重新生成' })).toBeVisible({ timeout: 15_000 });
-  await expect(studio).toContainText('已带入 AI 配图', { timeout: 15_000 });
+  await expect(studio.getByText('生成 AI 配图')).toHaveCount(0);
   await expect(studio).toContainText('实际生成 3 张');
   await expect(studio.locator('.ai-card-canvas')).toHaveAttribute('width', '1080');
   await expect(studio.locator('.ai-card-thumb')).toHaveCount(3);
@@ -792,28 +765,27 @@ test('AI card studio generates an editorial PNG and saves it', async ({ page, re
   await expect(page.locator('.card-group-deck-item')).toHaveCount(3);
   await page.waitForTimeout(350);
   await page.screenshot({ path: path.join(SHOTS, '18-card-group.png') });
-  await page.getByRole('contentinfo').getByRole('button', { name: '关闭' }).click();
 
-  await page.locator('.project-tab').filter({ hasText: '插图' }).click();
-  await expect(page.locator('.card-group-card')).toHaveCount(1);
-  await page.locator('.card-group-card').click();
-  await expect(page.locator('.card-group-deck-item')).toHaveCount(3);
-  await expect(page.locator('.card-group-index')).toContainText('01 / 03');
+  // Cards are rendered locally; no image-model API should be involved. Clicking
+  // a card opens a full lightbox that keeps ← → navigation inside the group.
+  await page.locator('.card-group-preview-image').click();
+  await expect(page.locator('.group-lightbox')).toBeVisible();
+  await expect(page.locator('.lightbox-counter')).toContainText('01 / 03');
   await page.keyboard.press('ArrowRight');
-  await expect(page.locator('.card-group-index')).toContainText('02 / 03');
+  await expect(page.locator('.lightbox-counter')).toContainText('02 / 03');
   await page.keyboard.press('ArrowLeft');
-  await expect(page.locator('.card-group-index')).toContainText('01 / 03');
-  await page.waitForTimeout(350);
-  await page.screenshot({ path: path.join(SHOTS, '20-illustration-group.png') });
+  await expect(page.locator('.lightbox-counter')).toContainText('01 / 03');
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: path.join(SHOTS, '19-card-group-lightbox.png') });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.group-lightbox')).toHaveCount(0);
+  await expect(page.locator('.card-group-modal')).toBeVisible();
   await page.getByRole('contentinfo').getByRole('button', { name: '关闭' }).click();
 
   const after = await (await request.get(`/api/projects/${project.id}`)).json();
   expect(after.assets.card).toHaveLength(3);
   expect(after.assets.card.every((asset: { fileUrl?: string }) => Boolean(asset.fileUrl))).toBeTruthy();
-  expect(after.assets.illustration).toHaveLength(3);
-  const imageGroups = new Set(after.assets.illustration.map((asset: { cardGroupId?: string }) => asset.cardGroupId));
-  expect(imageGroups.size).toBe(1);
-  expect(after.assets.illustration[0].cardGroupTotal).toBe(3);
+  expect(after.assets.illustration).toHaveLength(0);
 });
 
 test('media generation saves an illustration into the project', async ({ page, request }) => {
